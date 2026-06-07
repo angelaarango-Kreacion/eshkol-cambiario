@@ -209,7 +209,7 @@ html_banner += '</div>'
 st.markdown(html_banner, unsafe_allow_html=True)
 
 # Contenedor del espacio de trabajo contable
-st.markdown('<div class="eshkol-body">', unsafe_allow_html=True)
+
 
 FILE_TRM = "trm_almacen.txt"
 FILE_GASTOS = "gastos_almacen.txt"
@@ -538,4 +538,3 @@ with tab4:
             st.success("¡Sistema purgado!")
             st.rerun()
 
-st.markdown('</div>', unsafe_allow_html=True)
