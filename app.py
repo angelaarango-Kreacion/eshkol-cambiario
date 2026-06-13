@@ -1,4 +1,3 @@
-import streamlit as pd
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -71,7 +70,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- BANNER PRINCIPAL ---
-# Intenta cargar el logo si existe con nombres estándar
 logo_path = None
 for name in ["logo.png", "logo.jpg", "logo.PNG", "LOGO OFICIAL.jpg", "1.png"]:
     if os.path.exists(name):
@@ -94,7 +92,6 @@ with col_tit:
     """, unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-
 # --- APERTURA DEL CUERPO CON PADINNG SEGURO ---
 st.markdown('<div class="app-padding">', unsafe_allow_html=True)
 
@@ -109,9 +106,8 @@ def procesar_extracto_davivienda(uploaded_file):
     for idx, page in enumerate(reader.pages):
         texto_pagina = page.extract_text()
         
-        # 🚨 FILTRO INTELIGENTE DE CONTROL:
-        # Si la página contiene el cuadro resumen de fin de ciclo, la saltamos por completo.
-        # Esto elimina los 5 ACH FEES duplicados de la página 3.
+        # 🚨 FILTRO INTELIGENTE CRÍTICO:
+        # Ignora la página informativa de acumulados al final para evitar duplicar cargos.
         if "OVERDRAFT AND RETURN CHECK FEES" in texto_pagina or "YEAR-TO-DATE" in texto_pagina:
             continue
             
@@ -119,10 +115,10 @@ def procesar_extracto_davivienda(uploaded_file):
         for linea in lineas:
             linea_upper = linea.upper()
             
-            # Capturar los cargos por transferencia ACH
+            # Capturar los cargos individuales de ACH FEES 
             if "ACH FEES" in linea_upper and "TOTAL" not in linea_upper:
                 fechas = re.findall(regex_fecha, linea)
-                fecha = fechas[0] if fechas else "05/30/26" # Fecha por defecto de respaldo
+                fecha = fechas[0] if fechas else "05/30/26"
                 
                 datos_extraidos.append({
                     "Fecha": fecha,
@@ -130,7 +126,7 @@ def procesar_extracto_davivienda(uploaded_file):
                     "USD": 0.50
                 })
                 
-            # Capturar la comisión por saldo mínimo
+            # Capturar la comisión por saldo mínimo [cite: 28]
             elif "BELOW MINIMUM" in linea_upper or "MINIMUM BALANCE FEE" in linea_upper:
                 fechas = re.findall(regex_fecha, linea)
                 fecha = fechas[0] if fechas else "05/29/26"
@@ -144,10 +140,9 @@ def procesar_extracto_davivienda(uploaded_file):
     return pd.DataFrame(datos_extraidos)
 
 # =========================================================================
-# 📊 BASE DE DATOS SIMULADA DE TRM (PARA SIMPLIFICACIÓN DEL DESPLIEGUE)
+# 📊 BASE DE DATOS DE TRM INTERNA (MAYO 2026)
 # =========================================================================
 def obtener_trm_historica(fecha_str):
-    # Diccionario de respaldo con las TRM reales del periodo (Mayo 2026)
     trm_valores = {
         "05/06/26": 3723.33, "5/06/26": 3723.33, "2026-05-06": 3723.33,
         "05/13/26": 3775.07, "5/13/26": 3775.07, "2026-05-13": 3775.07,
@@ -156,31 +151,26 @@ def obtener_trm_historica(fecha_str):
         "05/28/26": 3631.57, "5/28/26": 3631.57, "2026-05-28": 3631.57,
         "05/29/26": 3646.58, "5/29/26": 3646.58, "2026-05-29": 3646.58,
     }
-    return trm_valores.get(fecha_str, 3700.00) # 3700 COP base si no encuentra la fecha exacta
+    return trm_valores.get(fecha_str, 3700.00)
 
 # =========================================================================
-# 🖥️ INTERFAZ DE USUARIO Y CONTROLADOR DEL FLUJO
+# 🖥️ INTERFAZ DE USUARIO CONSTRUCCIÓN PREMIUM
 # =========================================================================
-
 st.subheader("📁 Carga de Extracto Bancario")
 uploaded_file = st.file_uploader("Arrastra aquí el PDF original de Davivienda (DDA USD)", type=["pdf"])
 
 if uploaded_file is not None:
-    with st.spinner("Procesando estructura bancaria e indexando TRM oficial..."):
-        # Ejecutar extractor limpio sin duplicados
+    with st.spinner("Procesando estructura bancaria..."):
         df_gastos = procesar_extracto_davivienda(uploaded_file)
         
     if not df_gastos.empty:
-        # Aplicar el cálculo de la TRM e inyectar columna COP
         df_gastos["TRM Usada"] = df_gastos["Fecha"].apply(obtener_trm_historica)
         df_gastos["Total COP"] = df_gastos["USD"] * df_gastos["TRM Usada"]
         
-        # Formatear fechas para mejor presentación visual
         df_gastos["Fecha"] = pd.to_datetime(df_gastos["Fecha"], format="%m/%d/%b", errors='coerce').fillna(
             pd.to_datetime(df_gastos["Fecha"], format="%m/%d/%y", errors='coerce')
         ).dt.strftime('%Y-%m-%d')
         
-        # MÓDULO DE MÉTRICAS RÁPIDAS
         st.markdown("### 📊 Totales del Periodo Analizado")
         m_col1, m_col2, m_col3 = st.columns(3)
         
@@ -197,32 +187,27 @@ if uploaded_file is not None:
             
         st.write("")
         
-        # PANELES DE INFORME
         tab1, tab2 = st.tabs(["📋 Vista de Datos Integrada", "📈 Análisis Gráfico"])
         
         with tab1:
             st.markdown("#### Detalle Cronológico de Comisiones Bancarias")
             st.dataframe(df_gastos.style.format({
                 "USD": "${:,.2f}",
-                "TRM Usada": "${:,.2f} COP",
+                "TRM Usada": "{:,.2f} COP",
                 "Total COP": "${:,.2f} COP"
             }), use_container_width=True)
             
-            # BOTÓN DE EXPORTACIÓN A EXCEL PREMIUM
-            # Crear archivo temporal en memoria
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_gastos.to_excel(writer, index=False, sheet_name='📋 Detalle Diario')
                 
-                # Resumen rápido semanal
                 df_gastos['Fecha_dt'] = pd.to_datetime(df_gastos['Fecha'])
                 resumen_semanal = df_gastos.groupby(pd.Grouper(key='Fecha_dt', freq='W-SUN')).agg({'USD':'sum', 'Total COP':'sum'}).reset_index()
                 resumen_semanal.rename(columns={'Fecha_dt': 'Corte Semana'}, inplace=True)
                 resumen_semanal['Corte Semana'] = resumen_semanal['Corte Semana'].dt.strftime('%Y-%m-%d')
                 resumen_semanal.to_excel(writer, index=False, sheet_name='📅 Resumen Semanal')
                 
-                # Resumen mensual
                 df_gastos['Mes'] = df_gastos['Fecha_dt'].dt.strftime('%Y-%m')
                 resumen_mensual = df_gastos.groupby('Mes').agg({'USD':'sum', 'Total COP':'sum'}).reset_index()
                 resumen_mensual.rename(columns={'Mes': 'Corte Mes'}, inplace=True)
@@ -239,7 +224,6 @@ if uploaded_file is not None:
             
         with tab2:
             st.markdown("#### Distribución del Gasto Operativo")
-            # Gráfico de barras interactivo de Altair
             chart = alt.Chart(df_gastos).mark_bar(color='#1f3a2b', borderRadiusTopLeft=4, borderRadiusTopRight=4).encode(
                 x=alt.X('Fecha:T', title='Fecha de la Transacción'),
                 y=alt.Y('USD:Q', title='Monto del Cargo (USD)'),
@@ -250,5 +234,4 @@ if uploaded_file is not None:
     else:
         st.warning("⚠️ No se encontraron registros de cobros de comisiones en el archivo PDF cargado.")
 
-st.markdown('</div>', unsafe_allow_html=True) # Cierre del padding seguro
-
+st.markdown('</div>', unsafe_allow_html=True)
