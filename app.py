@@ -7,7 +7,7 @@ import re
 import os
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE LA PÁGINA ---
+# --- CONFIGURACIÓN DE LA PÁGINA (ESTRUCTURA ORIGINAL) ---
 st.set_page_config(
     page_title="Eshkol Premium - Control Cambiario",
     page_icon="🌿",
@@ -15,18 +15,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- ESTILOS CSS AVANZADOS (INTERFAZ PREMIUM Y MÓVIL) ---
+# --- ESTILOS CSS PERSONALIZADOS DE LA SEMANA PASADA ---
 st.markdown("""
     <style>
-    /* Desactivar márgenes por defecto para el banner */
     .main .block-container {
         padding-top: 0rem !important;
         padding-left: 0rem !important;
         padding-right: 0rem !important;
         max-width: 100% !important;
     }
-    
-    /* Banner Corporativo Oscuro */
     .eshkol-header {
         background: linear-gradient(135deg, #111b15 0%, #070b08 100%);
         padding: 2.5rem 2rem;
@@ -37,13 +34,9 @@ st.markdown("""
         align-items: center;
         gap: 20px;
     }
-    
-    /* Contenedor de Ajuste Interno de la App */
     .app-padding {
         padding: 0rem 2rem 2rem 2rem;
     }
-    
-    /* Tarjetas de Métricas */
     .metric-card {
         background-color: #f8fafc;
         border: 1px solid #e2e8f0;
@@ -52,13 +45,11 @@ st.markdown("""
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
         text-align: center;
     }
-    
     .metric-val {
         font-size: 2rem;
         font-weight: 700;
         color: #1f3a2b;
     }
-    
     .metric-lbl {
         font-size: 0.85rem;
         text-transform: uppercase;
@@ -71,7 +62,7 @@ st.markdown("""
 
 # --- BANNER PRINCIPAL ---
 logo_path = None
-for name in ["logo.png", "logo.jpg", "logo.PNG", "LOGO OFICIAL.jpg", "1.png"]:
+for name in ["logo.png", "logo.jpg", "logo.PNG", "logo.png.png", "LOGO FONDO NEGRO.jpg", "LOGO OFICIAL.jpg", "1.png"]:
     if os.path.exists(name):
         logo_path = name
         break
@@ -92,11 +83,11 @@ with col_tit:
     """, unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- APERTURA DEL CUERPO CON PADINNG SEGURO ---
+# --- CUERPO DE LA APLICACIÓN ---
 st.markdown('<div class="app-padding">', unsafe_allow_html=True)
 
 # =========================================================================
-# ⚙️ FUNCIÓN LOGICA DEL EXTRACTOR DE PDF (CON FILTRO ANTI-DUPLICADOS)
+# ⚙️ FUNCIÓN LOGICA DEL EXTRACTOR DE PDF (FILTRADO DE PÁGINAS REPETIDAS)
 # =========================================================================
 def procesar_extracto_davivienda(uploaded_file):
     reader = pypdf.PdfReader(uploaded_file)
@@ -106,8 +97,8 @@ def procesar_extracto_davivienda(uploaded_file):
     for idx, page in enumerate(reader.pages):
         texto_pagina = page.extract_text()
         
-        # 🚨 FILTRO INTELIGENTE CRÍTICO:
-        # Ignora la página informativa de acumulados al final para evitar duplicar cargos.
+        # 🚨 CORRECCIÓN DE DUPLICADOS:
+        # Se descarta la página 3 si contiene la tabla resumen acumulativa del banco
         if "OVERDRAFT AND RETURN CHECK FEES" in texto_pagina or "YEAR-TO-DATE" in texto_pagina:
             continue
             
@@ -115,7 +106,7 @@ def procesar_extracto_davivienda(uploaded_file):
         for linea in lineas:
             linea_upper = linea.upper()
             
-            # Capturar los cargos individuales de ACH FEES 
+            # Extrae cobros ACH individuales (ignora las líneas informativas de totales)
             if "ACH FEES" in linea_upper and "TOTAL" not in linea_upper:
                 fechas = re.findall(regex_fecha, linea)
                 fecha = fechas[0] if fechas else "05/30/26"
@@ -126,7 +117,7 @@ def procesar_extracto_davivienda(uploaded_file):
                     "USD": 0.50
                 })
                 
-            # Capturar la comisión por saldo mínimo [cite: 28]
+            # Extrae la comisión por saldo mínimo por debajo del límite
             elif "BELOW MINIMUM" in linea_upper or "MINIMUM BALANCE FEE" in linea_upper:
                 fechas = re.findall(regex_fecha, linea)
                 fecha = fechas[0] if fechas else "05/29/26"
@@ -140,7 +131,7 @@ def procesar_extracto_davivienda(uploaded_file):
     return pd.DataFrame(datos_extraidos)
 
 # =========================================================================
-# 📊 BASE DE DATOS DE TRM INTERNA (MAYO 2026)
+# 📊 MAPEO HISTÓRICO DE TRM OFICIAL (MAYO 2026)
 # =========================================================================
 def obtener_trm_historica(fecha_str):
     trm_valores = {
@@ -154,7 +145,7 @@ def obtener_trm_historica(fecha_str):
     return trm_valores.get(fecha_str, 3700.00)
 
 # =========================================================================
-# 🖥️ INTERFAZ DE USUARIO CONSTRUCCIÓN PREMIUM
+# 🖥️ COMPONENTES INTERACTIVOS DE LA APLICACIÓN ORIGINAL
 # =========================================================================
 st.subheader("📁 Carga de Extracto Bancario")
 uploaded_file = st.file_uploader("Arrastra aquí el PDF original de Davivienda (DDA USD)", type=["pdf"])
@@ -164,13 +155,16 @@ if uploaded_file is not None:
         df_gastos = procesar_extracto_davivienda(uploaded_file)
         
     if not df_gastos.empty:
+        # Calcular TRM y totales en COP
         df_gastos["TRM Usada"] = df_gastos["Fecha"].apply(obtener_trm_historica)
         df_gastos["Total COP"] = df_gastos["USD"] * df_gastos["TRM Usada"]
         
+        # Formatear la columna de fechas
         df_gastos["Fecha"] = pd.to_datetime(df_gastos["Fecha"], format="%m/%d/%b", errors='coerce').fillna(
             pd.to_datetime(df_gastos["Fecha"], format="%m/%d/%y", errors='coerce')
         ).dt.strftime('%Y-%m-%d')
         
+        # Tarjetas de totales en fila superior
         st.markdown("### 📊 Totales del Periodo Analizado")
         m_col1, m_col2, m_col3 = st.columns(3)
         
@@ -187,6 +181,7 @@ if uploaded_file is not None:
             
         st.write("")
         
+        # Pestallas de datos y graficación nativa
         tab1, tab2 = st.tabs(["📋 Vista de Datos Integrada", "📈 Análisis Gráfico"])
         
         with tab1:
@@ -197,6 +192,7 @@ if uploaded_file is not None:
                 "Total COP": "${:,.2f} COP"
             }), use_container_width=True)
             
+            # Compilación del archivo Excel en memoria para exportación
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
