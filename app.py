@@ -208,22 +208,11 @@ html_banner += '</div>'
 
 st.markdown(html_banner, unsafe_allow_html=True)
 
-# Contenedor del espacio de trabajo contable
-
+# =========================================================================
+# 📈 MOTOR CAMBIARIO OPTIMIZADO (ÚNICA COLA DE CONEXIÓN EN BLOQUE)
+# =========================================================================
 FILE_TRM = "trm_almacen.txt"
 FILE_GASTOS = "gastos_almacen.txt"
-
-def obtener_trm_oficial_en_vivo(fecha_str):
-    try:
-        url = f"https://datos.gov.co/resource/mcec-87by.json?vigenciadesde={fecha_str}T00:00:00.000"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            datos = json.loads(response.read().decode('utf-8'))
-            if datos and len(datos) > 0 and 'valor' in datos[0]:
-                return float(datos[0]['valor'])
-    except:
-        pass
-    return None
 
 def cargar_trm_locales():
     dicc = {}
@@ -241,30 +230,53 @@ def guardar_trm_locales(dicc):
         for fecha, valor in dicc.items():
             f.write(f"{fecha};{valor}\n")
 
+def sincronizar_trm_en_bloque():
+    """Hace una única petición masiva y veloz para mitigar congelamientos y cubrir fines de semana."""
+    dicc = cargar_trm_locales()
+    try:
+        # Traemos los últimos 200 registros de vigencia desde el portal oficial nacional
+        url = "https://datos.gov.co/resource/mcec-87by.json?$order=vigenciadesde%20DESC&$limit=200"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=7) as response:
+            datos = json.loads(response.read().decode('utf-8'))
+            for reg in datos:
+                if 'valor' in reg and 'vigenciadesde' in reg and 'vigenciahasta' in reg:
+                    valor = float(reg['valor'])
+                    f_desde = reg['vigenciadesde'].split('T')[0]
+                    f_hasta = reg['vigenciahasta'].split('T')[0]
+                    
+                    dt_desde = datetime.strptime(f_desde, "%Y-%m-%d")
+                    dt_hasta = datetime.strptime(f_hasta, "%Y-%m-%d")
+                    
+                    # Expandir el valor para rellenar de forma continua fines de semana y festivos
+                    paso = dt_desde
+                    while paso <= dt_hasta:
+                        dicc[paso.strftime("%Y-%m-%d")] = valor
+                        paso += timedelta(days=1)
+        guardar_trm_locales(dicc)
+    except:
+        pass
+    return dicc
+
 def obtener_trm_inteligente(dicc, fecha_str):
-    valor_en_vivo = obtener_trm_oficial_en_vivo(fecha_str)
-    if valor_en_vivo and valor_en_vivo > 1000:
-        dicc[fecha_str] = valor_en_vivo
-        return valor_en_vivo
-        
+    # Lectura inmediata en memoria expandida
     if fecha_str in dicc and dicc[fecha_str] > 1000:
         return dicc[fecha_str]
-        
+    # Búsqueda regresiva en caso de desconexión extrema o vacío
     try:
         dt = datetime.strptime(fecha_str, "%Y-%m-%d")
-        for i in range(1, 8):
+        for i in range(1, 16):
             f_ant = (dt - timedelta(days=i)).strftime("%Y-%m-%d")
-            val_ant_vivo = obtener_trm_oficial_en_vivo(f_ant)
-            if val_ant_vivo and val_ant_vivo > 1000:
-                dicc[f_ant] = val_ant_vivo
-                return val_ant_vivo
             if f_ant in dicc and dicc[f_ant] > 1000:
                 return dicc[f_ant]
     except:
         pass
     return None
 
-trm_datos = cargar_trm_locales()
+# Sincronización transparente e instantánea al arranque
+with st.spinner("Sincronizando pasarela de divisas en tiempo real..."):
+    trm_datos = sincronizar_trm_en_bloque()
+
 fecha_hoy_dt = datetime.now()
 fecha_hoy_str = fecha_hoy_dt.strftime("%Y-%m-%d")
 
@@ -283,10 +295,9 @@ except:
     fecha_base_dt = datetime(ano_sel, mes_sel, 1)
 fecha_base_str = fecha_base_dt.strftime("%Y-%m-%d")
 
-with st.spinner("Sincronizando con la base cambiaria nacional..."):
-    trm_hoy = obtener_trm_inteligente(trm_datos, fecha_hoy_str)
-    trm_inspeccionada = obtener_trm_inteligente(trm_datos, fecha_base_str)
-    guardar_trm_locales(trm_datos)
+# Lectura directa ultrarrápida sin bloqueos HTTP
+trm_hoy = obtener_trm_inteligente(trm_datos, fecha_hoy_str)
+trm_inspeccionada = obtener_trm_inteligente(trm_datos, fecha_base_str)
 
 st.write(" ")
 st.markdown("#### 📈 Tendencia de la Moneda Oficial (Ventana de 7 días)")
@@ -310,8 +321,6 @@ for i in range(0, 7):
             st.metric(label=etiqueta, value=f"${trm_ant:,.2f}")
         else:
             st.metric(label=etiqueta, value="N/A")
-
-guardar_trm_locales(trm_datos)
 
 valores_validos = [v for v in lista_valores_semana if v > 1000]
 if valores_validos:
@@ -351,8 +360,7 @@ with tab0:
             for pagina in lector.pages:
                 texto_pagina = pagina.extract_text()
                 
-                # 🚨 PARCHE QUIRÚRGICO DE PROTECCIÓN MÁSTER SENIOR ANTI-DUPLICADOS
-                # Si la página contiene el resumen de cobros informativos o acumulados de fin de periodo, se descarta por completo.
+                # Parche quirúrgico de protección máster senior anti-duplicados
                 if "OVERDRAFT AND RETURN CHECK FEES" in texto_pagina.upper() or "YEAR-TO-DATE" in texto_pagina.upper():
                     continue
                 
