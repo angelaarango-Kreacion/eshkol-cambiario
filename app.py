@@ -43,12 +43,10 @@ if os.path.exists("1.png"):
         pass
 
 nombres_posibles = ["logo.png", "logo.PNG", "logo.png.png", "logo.jpg", "LOGO FONDO NEGRO.jpg"]
-ruta_logo_valida = None
 logo_base64 = ""
 
 for nombre in nombres_posibles:
     if os.path.exists(nombre):
-        ruta_logo_valida = nombre
         try:
             with open(nombre, "rb") as f:
                 logo_base64 = base64.b64encode(f.read()).decode()
@@ -354,6 +352,7 @@ with tab0:
             
             lineas = texto_completo.splitlines()
             gastos_encontrados = []
+            vistos_en_este_pdf = set() # Estructura de control anti-duplicados por capa
             
             patron_ach_fees = re.compile(r'\bACH\s+FEES\b', re.IGNORECASE)
             patron_minimum = re.compile(r'\bBELOW\s+(?:MINIMUM\s+)?BALANCE\s+FEES?\b', re.IGNORECASE)
@@ -393,8 +392,14 @@ with tab0:
                     if monto_usd is None:
                         monto_usd = 0.50 if es_ach else 35.00
                     
+                    # FILTRO DE UNICIDAD: Evita duplicar movimientos leídos en capas paralelas del PDF
+                    clave_gasto = (fecha_gasto, concepto, monto_usd)
+                    if clave_gasto in vistos_en_este_pdf:
+                        continue
+                        
                     trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
                     if trm_g:
+                        vistos_en_este_pdf.add(clave_gasto)
                         gastos_encontrados.append({
                             "Fecha": fecha_gasto, "Descripción": concepto, "USD": monto_usd,
                             "TRM Aplicada": trm_g, "Total COP": monto_usd * trm_g
@@ -402,7 +407,7 @@ with tab0:
             
             if gastos_encontrados:
                 df_enc = pd.DataFrame(gastos_encontrados)
-                st.success(f"💥 Se identificaron **{len(df_enc)} gastos bancarios**.")
+                st.success(f"💥 Se identificaron **{len(df_enc)} gastos bancarios** unificados sin duplicados.")
                 st.dataframe(df_enc, use_container_width=True, hide_index=True)
                 
                 if st.button("💾 Inyectar y Consolidar en Libro Maestro"):
