@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Instalación e importación silenciosa de dependencias ---
+# --- Instalación e importación silenciosa de dependencias contables ---
 try:
     import pypdf
 except ImportError:
@@ -187,7 +187,7 @@ if logo_base64:
 html_banner += """
             <div class="text-titles-block">
                 <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>
-                <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.4</p>
+                <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.5</p>
             </div>
         </div>
     </div>
@@ -195,7 +195,7 @@ html_banner += """
 """
 st.markdown(html_banner, unsafe_allow_html=True)
 
-# Contenedor del espacio de trabajo contable
+# Contenedor global del espacio de trabajo
 st.markdown('<div class="eshkol-body">', unsafe_allow_html=True)
 
 FILE_TRM = "trm_almacen.txt"
@@ -219,8 +219,8 @@ def cargar_trm_locales():
 
 def guardar_trm_locales(dicc):
     with open(FILE_TRM, "w", encoding="utf-8") as f:
-        for fecha, valor in dicc.items():
-            f.write(f"{fecha};{valor}\n")
+        for fecha in sorted(dicc.keys()):
+            f.write(f"{fecha};{dicc[fecha]}\n")
 
 def sincronizar_trm_en_bloque():
     dicc = cargar_trm_locales()
@@ -332,7 +332,7 @@ with col_r2:
 # ==========================================
 st.write(" ")
 tab0, tab1, tab2, tab3, tab4 = st.tabs([
-    "📄 Procesar Extracto PDF", 
+    "📄 Procesar Extractos PDF", 
     "💰 Registrar Gasto Manual", 
     "📊 Consolidados e Informes Excel", 
     "⚙️ Migración CSV",
@@ -340,86 +340,82 @@ tab0, tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab0:
-    st.subheader("🕵️‍♂️ Extractor Inteligente Davivenda (USD)")
-    archivo_pdf = st.file_uploader("Cargar extracto bancario (.pdf)", type=["pdf"])
+    st.subheader("🕵️‍♂️ Extractor Avanzado Davivenda (Multi-Documento)")
+    archivos_pdf = st.file_uploader("Cargar extractos bancarios (.pdf)", type=["pdf"], accept_multiple_files=True)
     
-    if archivo_pdf is not None:
-        try:
-            lector = pypdf.PdfReader(archivo_pdf)
-            texto_completo = ""
-            for pagina in lector.pages:
-                texto_completo += pagina.extract_text() + "\n"
-            
-            lineas = texto_completo.splitlines()
-            gastos_encontrados = []
-            vistos_en_este_pdf = set() # Estructura de control anti-duplicados por capa
-            
-            patron_ach_fees = re.compile(r'\bACH\s+FEES\b', re.IGNORECASE)
-            patron_minimum = re.compile(r'\bBELOW\s+(?:MINIMUM\s+)?BALANCE\s+FEES?\b', re.IGNORECASE)
-            patron_fecha = r'(\d{1,2})/(\d{1,2})/(\d{2,4})'
-            
-            for linea in lineas:
-                linea_upper = linea.upper()
-                
-                if any(x in linea_upper for x in ["TOTAL", "SUMMARY", "RESUMEN", "YEAR-TO-DATE", "BROUGHT FORWARD", "FOR THIS PERIOD"]):
-                    continue
-                
-                es_ach = bool(patron_ach_fees.search(linea))
-                es_min = bool(patron_minimum.search(linea))
-                
-                if es_ach or es_min:
-                    match_f = re.search(patron_fecha, linea)
-                    if match_f:
-                        mes, dia, ano = match_f.group(1), match_f.group(2), match_f.group(3)
-                        if len(ano) == 2: ano = f"20{ano}"
-                        fecha_gasto = f"{ano}-{mes.zfill(2)}-{dia.zfill(2)}"
-                    else:
-                        fecha_gasto = fecha_base_str
-                    
-                    concepto = "ACH FEES" if es_ach else "BELOW BALANCE FEE"
-                    valores = re.findall(r'\b\d*\.\d{2}\b', linea)
-                    
-                    monto_usd = None
-                    if valores:
-                        for v in valores:
-                            try:
-                                val_f = float(v)
-                                if val_f in [0.50, 35.00]:
-                                    monto_usd = val_f
-                                    break
-                            except: pass
-                    
-                    if monto_usd is None:
-                        monto_usd = 0.50 if es_ach else 35.00
-                    
-                    # FILTRO DE UNICIDAD: Evita duplicar movimientos leídos en capas paralelas del PDF
-                    clave_gasto = (fecha_gasto, concepto, monto_usd)
-                    if clave_gasto in vistos_en_este_pdf:
+    if archivos_pdf:
+        gastos_encontrados_lote = []
+        vistos_en_este_lote = set() # Evita duplicados intermedios y de doble capa del PDF
+        
+        # Expresiones regulares ultra flexibles para detectar ítems rotos por saltos de línea bancarios
+        patron_ach_flexible = re.compile(r'ACH\s*FEES', re.IGNORECASE)
+        patron_minimum_flexible = re.compile(r'BELOW\s*(?:MINIMUM\s*)?BALANCE\s*FEES?', re.IGNORECASE)
+        
+        for archivo in archivos_pdf:
+            try:
+                lector = pypdf.PdfReader(archivo)
+                for num_pag, pagina in enumerate(lector.pages):
+                    texto_original = pagina.extract_text()
+                    if not texto_original:
                         continue
+                    
+                    # NORMALIZACIÓN RADICAL: Eliminamos saltos de línea internos y colapsamos espacios
+                    texto_normalizado = re.sub(r'\s+', ' ', texto_original)
+                    
+                    # Buscamos todas las comisiones en el texto plano unificado de la página
+                    for match in re.finditer(r'(ACH\s*FEES|BELOW\s*(?:MINIMUM\s*)?BALANCE\s*FEES?)', texto_normalizado, re.IGNORECASE):
+                        concepto_crudo = match.group(1)
+                        posicion_item = match.start()
                         
-                    trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
-                    if trm_g:
-                        vistos_en_este_pdf.add(clave_gasto)
-                        gastos_encontrados.append({
-                            "Fecha": fecha_gasto, "Descripción": concepto, "USD": monto_usd,
-                            "TRM Aplicada": trm_g, "Total COP": monto_usd * trm_g
-                        })
+                        # Extraemos la subcadena previa para rastrear la fecha de la transacción de esa fila
+                        sub_texto_previo = texto_normalizado[:posicion_item]
+                        fechas_previas = re.findall(r'\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b', sub_texto_previo)
+                        
+                        if fechas_previas:
+                            mes, dia, ano = fechas_previas[-1] # Tomamos la más cercana hacia atrás
+                            if len(ano) == 2: ano = f"20{ano}"
+                            fecha_gasto = f"{ano}-{mes.zfill(2)}-{dia.zfill(2)}"
+                        else:
+                            fecha_gasto = fecha_base_str
+                            
+                        # Estandarización oficial de conceptos contables y montos fijos
+                        if patron_ach_flexible.search(concepto_crudo):
+                            concepto_final = "ACH FEES"
+                            monto_usd = 0.50
+                        else:
+                            concepto_final = "BELOW BALANCE FEE"
+                            monto_usd = 35.00
+                            
+                        # Llave de control de unicidad por transacción
+                        clave_transaccion = (fecha_gasto, concepto_final, monto_usd)
+                        
+                        if clave_transaccion not in vistos_en_este_lote:
+                            trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
+                            if trm_g:
+                                vistos_en_este_lote.add(clave_transaccion)
+                                gastos_encontrados_lote.append({
+                                    "Fecha": fecha_gasto,
+                                    "Descripción": concepto_final,
+                                    "USD": monto_usd,
+                                    "TRM Aplicada": trm_g,
+                                    "Total COP": monto_usd * trm_g,
+                                    "Origen": archivo.name
+                                })
+            except Exception as e:
+                st.error(f"Error procesando {archivo.name}: {e}")
+                
+        if gastos_encontrados_lote:
+            df_enc = pd.DataFrame(gastos_encontrados_lote)
+            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos únicos** procesando todos los PDFs cargados.")
+            st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
             
-            if gastos_encontrados:
-                df_enc = pd.DataFrame(gastos_encontrados)
-                st.success(f"💥 Se identificaron **{len(df_enc)} gastos bancarios** unificados sin duplicados.")
-                st.dataframe(df_enc, use_container_width=True, hide_index=True)
-                
-                if st.button("💾 Inyectar y Consolidar en Libro Maestro"):
-                    with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
-                        for g in gastos_encontrados:
-                            fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
-                    st.success("¡Gastos incorporados exitosamente!")
-            else:
-                st.warning("No se encontraron comisiones deducibles en el documento.")
-                
-        except Exception as e:
-            st.error(f"Error procesando el PDF: {e}")
+            if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
+                with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
+                    for g in gastos_encontrados_lote:
+                        fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
+                st.success("¡Todos los extractos fueron procesados, unificados e inyectados con éxito!")
+        else:
+            st.warning("No se identificaron comisiones deducibles en ninguno de los archivos cargados.")
 
 with tab1:
     st.subheader("Cruce Manual de Gastos Bancarios")
@@ -440,7 +436,34 @@ with tab1:
                 st.success("¡Gasto registrado con éxito!")
 
 with tab2:
-    st.subheader("📊 Reportes Financieros Consolidados")
+    st.subheader("📊 Reportes Financieros Consolidados e Histórico Cambiario")
+    
+    # Preparación del Histórico General de TRM en memoria para consulta y exportación
+    lineas_trm_hist = []
+    for f_trm, v_trm in sorted(trm_datos.items(), reverse=True):
+        lineas_trm_hist.append({"Fecha": f_trm, "TRM Oficial (COP)": v_trm})
+    df_trm_maestro = pd.DataFrame(lineas_trm_hist)
+    
+    # Sección interactiva para consultar la TRM de un mes específico
+    st.markdown("#### 🔍 Consultar Histórico de TRM por Mes")
+    c_f1, c_f2 = st.columns(2)
+    filtro_ano = c_f1.selectbox("Filtrar Año TRM", list(range(fecha_hoy_dt.year, 2015, -1)), key="f_ano")
+    filtro_mes = c_f2.selectbox("Filtrar Mes TRM", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=fecha_hoy_dt.month - 1)
+    
+    meses_num = {"Enero":"01", "Febrero":"02", "Marzo":"03", "Abril":"04", "Mayo":"05", "Junio":"06", "Julio":"07", "Agosto":"08", "Septiembre":"09", "Octubre":"10", "Noviembre":"11", "Diciembre":"12"}
+    prefijo_busqueda = f"{filtro_ano}-{meses_num[filtro_mes]}"
+    
+    df_trm_filtrado = df_trm_maestro[df_trm_maestro["Fecha"].str.startswith(prefijo_busqueda)]
+    
+    if not df_trm_filtrado.empty:
+        st.caption(f"Mostrando tasas de cambio registradas para {filtro_mes} del {filtro_ano}")
+        st.dataframe(df_trm_filtrado, use_container_width=True, hide_index=True)
+    else:
+        st.info("No se hallaron registros locales para el periodo seleccionado.")
+        
+    st.write("---")
+    
+    # Procesamiento de Reportes Financieros Integrados
     if os.path.exists(FILE_GASTOS):
         lineas_gastos = []
         with open(FILE_GASTOS, "r", encoding="utf-8") as fg:
@@ -476,18 +499,20 @@ with tab2:
             st.write("📋 **Libro Diario de Detalles**")
             st.dataframe(df_detalles_final, use_container_width=True, hide_index=True)
             
+            # GENERACIÓN COMPLETA DEL EXCEL MULTIPESTAÑA CON HISTÓRICO DE TRM INCLUIDO
             output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
                 df_detalles_final.to_excel(writer, sheet_name='📋 Detalle Diario', index=False)
                 df_semanal_final.to_excel(writer, sheet_name='📅 Resumen Semanal', index=False)
                 df_mensual_final.to_excel(writer, sheet_name='🗓️ Resumen Mensual', index=False)
+                df_trm_maestro.to_excel(writer, sheet_name='📈 Histórico Completo TRM', index=False)
             
             excel_data = output_excel.getvalue()
             
             st.download_button(
-                label="🟢 DESCARGAR INFORME MULTIPESTAÑA EXCEL (.XLSX)",
+                label="🟢 DESCARGAR AUDITORÍA COMPLETA EXCEL (.XLSX)",
                 data=excel_data,
-                file_name=f"Informe_Gastos_Eshkol_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                file_name=f"Informe_Financiero_Eshkol_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
