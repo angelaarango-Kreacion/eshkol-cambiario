@@ -43,24 +43,7 @@ if os.path.exists("1.png"):
         pass
 
 # =========================================================================
-# 🖼️ PROCESAMIENTO SEGURO DEL LOGO EN BASE64 (PARA INYECCIÓN DIRECTA HTML)
-# =========================================================================
-logo_base64 = ""
-nombres_posibles = ["logo.png", "logo.PNG", "logo.png.png", "logo.jpg", "LOGO FONDO NEGRO.jpg"]
-ruta_logo_valida = None
-
-for nombre in nombres_posibles:
-    if os.path.exists(nombre):
-        ruta_logo_valida = nombre
-        try:
-            with open(nombre, "rb") as img_file:
-                logo_base64 = base64.b64encode(img_file.read()).decode()
-            break
-        except:
-            pass
-
-# =========================================================================
-# 🎨 INYECCIÓN DE ESTILOS CSS CLEAN-PREMIUM (ESTRUCTURA INTEGRADA)
+# 🎨 INYECCIÓN DE ESTILOS CSS CLEAN-PREMIUM
 # =========================================================================
 st.markdown("""
 <style>
@@ -79,7 +62,7 @@ st.markdown("""
     .banner-container {
         position: relative;
         width: 100%;
-        height: 240px;
+        height: 280px;
         background-size: cover;
         background-position: center;
         border-bottom: 5px solid #39B54A;
@@ -92,43 +75,30 @@ st.markdown("""
         left: 0;
         width: 100%;
         height: 100%;
-        background: linear-gradient(90deg, rgba(22,37,27,1) 0%, rgba(22,37,27,0.98) 40%, rgba(22,37,27,0.85) 70%, rgba(0,0,0,0) 100%);
+        background: linear-gradient(90deg, rgba(22,37,27,1) 0%, rgba(22,37,27,1) 45%, rgba(22,37,27,0.85) 70%, rgba(0,0,0,0) 100%);
         z-index: 1;
     }
-    .header-overlay-content {
+    .header-native-grid {
         position: absolute;
-        top: 50%;
         left: 4%;
+        top: 50%;
         transform: translateY(-50%);
         z-index: 10;
-        display: flex;
-        align-items: center;
-        gap: 30px;
         width: 92%;
-    }
-    .logo-container-integrated {
-        flex-shrink: 0;
-        display: flex;
-        align-items: center;
-    }
-    .logo-container-integrated img {
-        height: 110px;
-        width: auto;
-        object-fit: contain;
     }
     .brand-divider-fixed {
         width: 3px;
-        height: 90px;
+        height: 100px;
         background-color: #39B54A;
         box-shadow: 0px 0px 8px rgba(57, 181, 74, 0.5);
-        flex-shrink: 0;
+        margin: auto;
     }
     .text-titles-block {
         color: #FFFFFF !important;
         font-family: sans-serif !important;
     }
     .app-main-title {
-        font-size: 2.2rem !important;
+        font-size: 2.4rem !important;
         font-weight: 900 !important;
         color: #FFFFFF !important;
         line-height: 1.15 !important;
@@ -140,7 +110,7 @@ st.markdown("""
         font-size: 0.95rem !important;
         color: #39B54A !important;
         font-weight: 700 !important;
-        margin: 6px 0 0 0 !important;
+        margin-top: 8px !important;
         letter-spacing: 2px;
         text-transform: uppercase;
     }
@@ -187,33 +157,60 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================================
-# 🌿 MONTAJE UNIFICADO DEL BANNER CON LOGO Y TÍTULOS SUPERPUESTOS
+# 🌿 MONTAJE DEL BANNER (FONDO PREMIUM)
 # =========================================================================
 url_fondo = f"data:image/png;base64,{imagen_fondo_64}" if imagen_fondo_64 else ""
 
 html_banner = f'<div class="banner-container" style="background-image: url(\'{url_fondo}\'); background-color: #16251b;">'
 html_banner += '    <div class="banner-overlay-premium"></div>'
-html_banner += '    <div class="header-overlay-content">'
-
-if logo_base64:
-    html_banner += f'        <div class="logo-container-integrated"><img src="data:image/png;base64,{logo_base64}"></div>'
-    html_banner += '        <div class="brand-divider-fixed"></div>'
-
-html_banner += '        <div class="text-titles-block">'
-html_banner += '            <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>'
-html_banner += '            <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.4</p>'
-html_banner += '        </div>'
-html_banner += '    </div>'
 html_banner += '</div>'
-
 st.markdown(html_banner, unsafe_allow_html=True)
 
 # =========================================================================
-# 📈 MOTOR CAMBIARIO OPTIMIZADO (ÚNICA COLA DE CONEXIÓN EN BLOQUE)
+# 🎛️ ACOPLAMIENTO NATIVO DEL LOGO Y TÍTULOS
 # =========================================================================
+nombres_posibles = ["logo.png", "logo.PNG", "logo.png.png", "logo.jpg", "LOGO FONDO NEGRO.jpg"]
+ruta_logo_valida = None
+for nombre in nombres_posibles:
+    if os.path.exists(nombre):
+        ruta_logo_valida = nombre
+        break
+
+with st.container():
+    st.markdown('<div class="header-native-grid">', unsafe_allow_html=True)
+    if ruta_logo_valida:
+        c_logo, c_linea, c_titulo = st.columns([1.8, 0.2, 8])
+        with c_logo:
+            st.image(ruta_logo_valida, width=170)
+        with c_linea:
+            st.markdown('<div class="brand-divider-fixed"></div>', unsafe_allow_html=True)
+        with c_titulo:
+            st.markdown("""
+                <div class="text-titles-block">
+                    <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>
+                    <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.4</p>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        c_titulo = st.columns([1])[0]
+        with c_titulo:
+            st.markdown("""
+                <div class="text-titles-block" style="margin-left: 20px;">
+                    <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>
+                    <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.4</p>
+                </div>
+            """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Contenedor del espacio de trabajo contable
+st.markdown('<div class="eshkol-body">', unsafe_allow_html=True)
+
 FILE_TRM = "trm_almacen.txt"
 FILE_GASTOS = "gastos_almacen.txt"
 
+# =========================================================================
+# 📈 MOTOR DE SINCRONIZACIÓN TRM MASIVA
+# =========================================================================
 def cargar_trm_locales():
     dicc = {}
     if os.path.exists(FILE_TRM):
@@ -221,8 +218,10 @@ def cargar_trm_locales():
             for linea in f:
                 partes = linea.strip().split(";")
                 if len(partes) == 2:
-                    try: dicc[partes[0]] = float(partes[1])
-                    except: pass
+                    try:
+                        dicc[partes[0]] = float(partes[1])
+                    except:
+                        pass
     return dicc
 
 def guardar_trm_locales(dicc):
@@ -231,13 +230,11 @@ def guardar_trm_locales(dicc):
             f.write(f"{fecha};{valor}\n")
 
 def sincronizar_trm_en_bloque():
-    """Hace una única petición masiva y veloz para mitigar congelamientos y cubrir fines de semana."""
     dicc = cargar_trm_locales()
     try:
-        # Traemos los últimos 200 registros de vigencia desde el portal oficial nacional
-        url = "https://datos.gov.co/resource/mcec-87by.json?$order=vigenciadesde%20DESC&$limit=200"
+        url = "https://datos.gov.co/resource/mcec-87by.json?$order=vigenciadesde%20DESC&$limit=150"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=7) as response:
+        with urllib.request.urlopen(req, timeout=6) as response:
             datos = json.loads(response.read().decode('utf-8'))
             for reg in datos:
                 if 'valor' in reg and 'vigenciadesde' in reg and 'vigenciahasta' in reg:
@@ -248,7 +245,6 @@ def sincronizar_trm_en_bloque():
                     dt_desde = datetime.strptime(f_desde, "%Y-%m-%d")
                     dt_hasta = datetime.strptime(f_hasta, "%Y-%m-%d")
                     
-                    # Expandir el valor para rellenar de forma continua fines de semana y festivos
                     paso = dt_desde
                     while paso <= dt_hasta:
                         dicc[paso.strftime("%Y-%m-%d")] = valor
@@ -259,13 +255,11 @@ def sincronizar_trm_en_bloque():
     return dicc
 
 def obtener_trm_inteligente(dicc, fecha_str):
-    # Lectura inmediata en memoria expandida
     if fecha_str in dicc and dicc[fecha_str] > 1000:
         return dicc[fecha_str]
-    # Búsqueda regresiva en caso de desconexión extrema o vacío
     try:
         dt = datetime.strptime(fecha_str, "%Y-%m-%d")
-        for i in range(1, 16):
+        for i in range(1, 15):
             f_ant = (dt - timedelta(days=i)).strftime("%Y-%m-%d")
             if f_ant in dicc and dicc[f_ant] > 1000:
                 return dicc[f_ant]
@@ -273,8 +267,7 @@ def obtener_trm_inteligente(dicc, fecha_str):
         pass
     return None
 
-# Sincronización transparente e instantánea al arranque
-with st.spinner("Sincronizando pasarela de divisas en tiempo real..."):
+with st.spinner("Sincronizando pasarela cambiaria en tiempo real..."):
     trm_datos = sincronizar_trm_en_bloque()
 
 fecha_hoy_dt = datetime.now()
@@ -295,10 +288,10 @@ except:
     fecha_base_dt = datetime(ano_sel, mes_sel, 1)
 fecha_base_str = fecha_base_dt.strftime("%Y-%m-%d")
 
-# Lectura directa ultrarrápida sin bloqueos HTTP
 trm_hoy = obtener_trm_inteligente(trm_datos, fecha_hoy_str)
 trm_inspeccionada = obtener_trm_inteligente(trm_datos, fecha_base_str)
 
+# --- PANEL DE TENDENCIA SEMANAL ---
 st.write(" ")
 st.markdown("#### 📈 Tendencia de la Moneda Oficial (Ventana de 7 días)")
 cols_dias = st.columns(7)
@@ -331,8 +324,9 @@ if valores_validos:
         x=alt.X('Día:N', sort=None, title='Días Evaluados'),
         y=alt.Y('TRM ($):Q', scale=alt.Scale(domain=[min_v - 25, max_v + 25], zero=False), title='COP Oficial')
     ).properties(height=160)
-    st.altair_chart(chart, width='stretch')
+    st.altair_chart(chart, use_container_width=True)
 
+# --- RECUADROS DE SEGUIMIENTO ---
 st.write(" ")
 col_r1, col_r2 = st.columns(2)
 with col_r1: 
@@ -340,6 +334,9 @@ with col_r1:
 with col_r2: 
     st.metric(label="🔵 TRM FECHA SELECCIONADA", value=f"$ {trm_inspeccionada:,.2f}" if trm_inspeccionada else "SIN REGISTRO")
 
+# ==========================================
+# 🗂️ MÓDULOS OPERATIVOS CONTABLES
+# ==========================================
 st.write(" ")
 tab0, tab1, tab2, tab3, tab4 = st.tabs([
     "📄 Procesar Extracto PDF", 
@@ -358,24 +355,21 @@ with tab0:
             lector = pypdf.PdfReader(archivo_pdf)
             texto_completo = ""
             for pagina in lector.pages:
-                texto_pagina = pagina.extract_text()
-                
-                # Parche quirúrgico de protección máster senior anti-duplicados
-                if "OVERDRAFT AND RETURN CHECK FEES" in texto_pagina.upper() or "YEAR-TO-DATE" in texto_pagina.upper():
-                    continue
-                
-                texto_completo += texto_pagina + "\n"
+                texto_completo += pagina.extract_text() + "\n"
             
             lineas = texto_completo.splitlines()
             gastos_encontrados = []
             
             patron_ach_fees = re.compile(r'\bACH\s+FEES\b', re.IGNORECASE)
-            patron_minimum = re.compile(r'\bBELOW\s+MINIMUM\s+BALANCE\s+FEE\b', re.IGNORECASE)
+            # REGEX FLEXIBLE: Detecta "BELOW BALANCE FEE", "BELOW BALANCE FEES" y "BELOW MINIMUM BALANCE FEE"
+            patron_minimum = re.compile(r'\bBELOW\s+(?:MINIMUM\s+)?BALANCE\s+FEES?\b', re.IGNORECASE)
             patron_fecha = r'(\d{1,2})/(\d{1,2})/(\d{2,4})'
             
             for linea in lineas:
                 linea_upper = linea.upper()
-                if any(x in linea_upper for x in ["TOTAL OVERDRAFT FEES", "YEAR-TO-DATE", "BROUGHT FORWARD", "FOR THIS PERIOD"]):
+                
+                # FILTRADO ESTRICTO: Ignora por completo las líneas de totales o resúmenes finales del extracto
+                if any(x in linea_upper for x in ["TOTAL", "SUMMARY", "RESUMEN", "YEAR-TO-DATE", "BROUGHT FORWARD", "FOR THIS PERIOD"]):
                     continue
                 
                 es_ach = bool(patron_ach_fees.search(linea))
@@ -390,7 +384,7 @@ with tab0:
                     else:
                         fecha_gasto = fecha_base_str
                     
-                    concepto = "ACH FEES" if es_ach else "BELOW MINIMUM BALANCE FEE"
+                    concepto = "ACH FEES" if es_ach else "BELOW BALANCE FEE"
                     valores = re.findall(r'\b\d*\.\d{2}\b', linea)
                     
                     monto_usd = None
@@ -416,7 +410,7 @@ with tab0:
             if gastos_encontrados:
                 df_enc = pd.DataFrame(gastos_encontrados)
                 st.success(f"💥 Se identificaron **{len(df_enc)} gastos bancarios**.")
-                st.dataframe(df_enc, width='stretch', hide_index=True)
+                st.dataframe(df_enc, use_container_width=True, hide_index=True)
                 
                 if st.button("💾 Inyectar y Consolidar en Libro Maestro"):
                     with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
@@ -434,7 +428,7 @@ with tab1:
     c_izq, c_der = st.columns(2)
     with c_izq:
         st.info(f"Fecha de liquidación: **{fecha_base_dt.strftime('%d/%m/%Y')}**")
-        desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW MINIMUM BALANCE FEE"])
+        desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW BALANCE FEE"])
         usd_gasto = st.number_input("Monto (USD)", min_value=0.0, step=0.01, value=0.50 if desc_gasto=="ACH FEES" else 35.00)
     with c_der:
         if trm_inspeccionada and usd_gasto > 0:
@@ -476,13 +470,13 @@ with tab2:
             c_rep1, c_rep2 = st.columns(2)
             with c_rep1:
                 st.write("**📊 Consolidado Acumulado Semanal**")
-                st.dataframe(df_semanal_final, width='stretch', hide_index=True)
+                st.dataframe(df_semanal_final, use_container_width=True, hide_index=True)
             with c_rep2:
                 st.write("**📊 Consolidado Acumulado Mensual**")
-                st.dataframe(df_mensual_final, width='stretch', hide_index=True)
+                st.dataframe(df_mensual_final, use_container_width=True, hide_index=True)
             
             st.write("📋 **Libro Diario de Detalles**")
-            st.dataframe(df_detalles_final, width='stretch', hide_index=True)
+            st.dataframe(df_detalles_final, use_container_width=True, hide_index=True)
             
             output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
@@ -497,7 +491,7 @@ with tab2:
                 data=excel_data,
                 file_name=f"Informe_Gastos_Eshkol_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width='stretch'
+                use_container_width=True
             )
         else: st.info("No hay transacciones registradas en el ciclo activo.")
     else: st.info("No hay transacciones registradas en el ciclo activo.")
@@ -551,3 +545,5 @@ with tab4:
             st.cache_data.clear()
             st.success("¡Sistema purgado!")
             st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
