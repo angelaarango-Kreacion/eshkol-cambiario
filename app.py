@@ -32,7 +32,7 @@ except ImportError:
     import openpyxl
 
 # =========================================================================
-# 🖼️ PROCESAMIENTO SEGURO DE LA IMAGEN DE FONDO
+# 🖼️ PROCESAMIENTO SEGURO DE RECURSOS GRÁFICOS (BASE64)
 # =========================================================================
 imagen_fondo_64 = ""
 if os.path.exists("1.png"):
@@ -41,6 +41,20 @@ if os.path.exists("1.png"):
             imagen_fondo_64 = base64.b64encode(f.read()).decode()
     except:
         pass
+
+nombres_posibles = ["logo.png", "logo.PNG", "logo.png.png", "logo.jpg", "LOGO FONDO NEGRO.jpg"]
+ruta_logo_valida = None
+logo_base64 = ""
+
+for nombre in nombres_posibles:
+    if os.path.exists(nombre):
+        ruta_logo_valida = nombre
+        try:
+            with open(nombre, "rb") as f:
+                logo_base64 = base64.b64encode(f.read()).decode()
+        except:
+            pass
+        break
 
 # =========================================================================
 # 🎨 INYECCIÓN DE ESTILOS CSS CLEAN-PREMIUM
@@ -78,7 +92,7 @@ st.markdown("""
         background: linear-gradient(90deg, rgba(22,37,27,1) 0%, rgba(22,37,27,1) 45%, rgba(22,37,27,0.85) 70%, rgba(0,0,0,0) 100%);
         z-index: 1;
     }
-    .header-native-grid {
+    .header-overlay-content {
         position: absolute;
         left: 4%;
         top: 50%;
@@ -88,10 +102,9 @@ st.markdown("""
     }
     .brand-divider-fixed {
         width: 3px;
-        height: 100px;
+        height: 90px;
         background-color: #39B54A;
         box-shadow: 0px 0px 8px rgba(57, 181, 74, 0.5);
-        margin: auto;
     }
     .text-titles-block {
         color: #FFFFFF !important;
@@ -157,50 +170,32 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================================
-# 🌿 MONTAJE DEL BANNER (FONDO PREMIUM)
+# 🌿 MONTAJE INTEGRADO DEL BANNER Y IDENTIDAD CORPORATIVA OVERLAY
 # =========================================================================
 url_fondo = f"data:image/png;base64,{imagen_fondo_64}" if imagen_fondo_64 else ""
+url_logo = f"data:image/png;base64,{logo_base64}" if logo_base64 else ""
 
-html_banner = f'<div class="banner-container" style="background-image: url(\'{url_fondo}\'); background-color: #16251b;">'
-html_banner += '    <div class="banner-overlay-premium"></div>'
-html_banner += '</div>'
+html_banner = f"""
+<div class="banner-container" style="background-image: url('{url_fondo}'); background-color: #16251b;">
+    <div class="banner-overlay-premium"></div>
+    <div class="header-overlay-content">
+        <div style="display: flex; align-items: center; gap: 25px;">
+"""
+
+if logo_base64:
+    html_banner += f'        <img src="{url_logo}" style="width: 170px; height: auto; max-height: 110px; object-fit: contain;" />'
+    html_banner += '        <div class="brand-divider-fixed"></div>'
+
+html_banner += """
+            <div class="text-titles-block">
+                <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>
+                <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.4</p>
+            </div>
+        </div>
+    </div>
+</div>
+"""
 st.markdown(html_banner, unsafe_allow_html=True)
-
-# =========================================================================
-# 🎛️ ACOPLAMIENTO NATIVO DEL LOGO Y TÍTULOS
-# =========================================================================
-nombres_posibles = ["logo.png", "logo.PNG", "logo.png.png", "logo.jpg", "LOGO FONDO NEGRO.jpg"]
-ruta_logo_valida = None
-for nombre in nombres_posibles:
-    if os.path.exists(nombre):
-        ruta_logo_valida = nombre
-        break
-
-with st.container():
-    st.markdown('<div class="header-native-grid">', unsafe_allow_html=True)
-    if ruta_logo_valida:
-        c_logo, c_linea, c_titulo = st.columns([1.8, 0.2, 8])
-        with c_logo:
-            st.image(ruta_logo_valida, width=170)
-        with c_linea:
-            st.markdown('<div class="brand-divider-fixed"></div>', unsafe_allow_html=True)
-        with c_titulo:
-            st.markdown("""
-                <div class="text-titles-block">
-                    <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>
-                    <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.4</p>
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        c_titulo = st.columns([1])[0]
-        with c_titulo:
-            st.markdown("""
-                <div class="text-titles-block" style="margin-left: 20px;">
-                    <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>
-                    <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v2.4</p>
-                </div>
-            """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # Contenedor del espacio de trabajo contable
 st.markdown('<div class="eshkol-body">', unsafe_allow_html=True)
@@ -361,14 +356,12 @@ with tab0:
             gastos_encontrados = []
             
             patron_ach_fees = re.compile(r'\bACH\s+FEES\b', re.IGNORECASE)
-            # REGEX FLEXIBLE: Detecta "BELOW BALANCE FEE", "BELOW BALANCE FEES" y "BELOW MINIMUM BALANCE FEE"
             patron_minimum = re.compile(r'\bBELOW\s+(?:MINIMUM\s+)?BALANCE\s+FEES?\b', re.IGNORECASE)
             patron_fecha = r'(\d{1,2})/(\d{1,2})/(\d{2,4})'
             
             for linea in lineas:
                 linea_upper = linea.upper()
                 
-                # FILTRADO ESTRICTO: Ignora por completo las líneas de totales o resúmenes finales del extracto
                 if any(x in linea_upper for x in ["TOTAL", "SUMMARY", "RESUMEN", "YEAR-TO-DATE", "BROUGHT FORWARD", "FOR THIS PERIOD"]):
                     continue
                 
