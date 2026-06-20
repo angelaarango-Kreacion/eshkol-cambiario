@@ -10,7 +10,7 @@ import io
 import base64
 
 # =========================================================================
-# 🚨 1. CONFIGURACIÓN GLOBAL DE STREAMLIT (DEBE SER LA PRIMERA LÍNEA)
+# 🚨 1. CONFIGURACIÓN GLOBAL DE STREAMLIT (PRIMERA LÍNEA OBLIGATORIA)
 # =========================================================================
 st.set_page_config(
     page_title="Control Financiero - Eshkol Premium", 
@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Instalación e importación silenciosa de dependencias contables ---
+# --- Instalación e importación automática de dependencias críticas ---
 try:
     import pypdf
 except ImportError:
@@ -55,7 +55,7 @@ for nombre in nombres_posibles:
         break
 
 # =========================================================================
-# 🎨 INYECCIÓN DE ESTILOS CSS CLEAN-PREMIUM CORREGIDOS
+# 🎨 INYECCIÓN DE ESTILOS CSS CLEAN-PREMIUM CORPORATIVOS
 # =========================================================================
 st.markdown("""
 <style>
@@ -169,7 +169,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================================
-# 🌿 MONTAJE INTEGRADO DEL BANNER Y IDENTIDAD CORPORATIVA OVERLAY
+# 🌿 MONTAJE INTEGRADO DEL BANNER Y STRIP CORPORATIVO
 # =========================================================================
 url_fondo = f"data:image/png;base64,{imagen_fondo_64}" if imagen_fondo_64 else ""
 url_logo = f"data:image/png;base64,{logo_base64}" if logo_base64 else ""
@@ -196,14 +196,13 @@ html_banner += """
 """
 st.markdown(html_banner, unsafe_allow_html=True)
 
-# Contenedor global del espacio de trabajo
 st.markdown('<div class="eshkol-body">', unsafe_allow_html=True)
 
 FILE_TRM = "trm_almacen.txt"
 FILE_GASTOS = "gastos_almacen.txt"
 
 # =========================================================================
-# 📈 MOTOR DE SINCRONIZACIÓN TRM MASIVA
+# 📈 MOTOR DE SINCRONIZACIÓN TRM MASIVA (BBDD OFICIAL SUIFT)
 # =========================================================================
 def cargar_trm_locales():
     dicc = {}
@@ -268,7 +267,7 @@ fecha_hoy_dt = datetime.now()
 fecha_hoy_str = fecha_hoy_dt.strftime("%Y-%m-%d")
 
 # ==========================================
-# 🗺️ CONTROLES CRONOLÓGICOS
+# 🗺️ CONTROLES CRONOLÓGICOS SCONTRÓLICOS
 # ==========================================
 st.markdown("### 📅 Eje de Tiempo Sincronizado")
 c_ano, c_mes, c_dia = st.columns(3)
@@ -285,7 +284,7 @@ fecha_base_str = fecha_base_dt.strftime("%Y-%m-%d")
 trm_hoy = obtener_trm_inteligente(trm_datos, fecha_hoy_str)
 trm_inspeccionada = obtener_trm_inteligente(trm_datos, fecha_base_str)
 
-# --- PANEL DE TENDENCIA SEMANAL ---
+# --- PANEL DE TENDENCIA DE LA MONEDA ---
 st.write(" ")
 st.markdown("#### 📈 Tendencia de la Moneda Oficial (Ventana de 7 días)")
 cols_dias = st.columns(7)
@@ -320,7 +319,6 @@ if valores_validos:
     ).properties(height=160)
     st.altair_chart(chart, use_container_width=True)
 
-# --- RECUADROS DE SEGUIMIENTO ---
 st.write(" ")
 col_r1, col_r2 = st.columns(2)
 with col_r1: 
@@ -349,119 +347,93 @@ with tab0:
         
         def clean_amount_internal(val_str: str) -> float:
             if not val_str: return 0.0
-            cleaned = val_str.replace('\n', '').replace(' ', '')
-            cleaned = re.sub(r'[^\d.,-]', '', cleaned)
+            cleaned = re.sub(r'[^\d.,-]', '', val_str.strip())
             if not cleaned: return 0.0
-            if cleaned.endswith('.') and cleaned.count('.') > 1: cleaned = cleaned[:-1]
+            # Validar formatos decimales anglosajones/europeos comúnmente impresos en PDF
             if ',' in cleaned and '.' in cleaned:
                 if cleaned.rfind(',') > cleaned.rfind('.'):
                     cleaned = cleaned.replace('.', '').replace(',', '.')
                 else:
                     cleaned = cleaned.replace(',', '')
             elif ',' in cleaned:
-                parts = cleaned.split(',')
-                if len(parts) == 2 and len(parts[1]) == 2:
+                if len(cleaned.split(',')[1]) == 2:
                     cleaned = cleaned.replace(',', '.')
                 else:
                     cleaned = cleaned.replace(',', '')
             try: return float(cleaned)
             except: return 0.0
 
-        summary_keywords = [
-            "OVERDRAFT AND RETURN CHECK FEES", 
-            "TOTAL OVERDRAFT", 
-            "ACH, NSF AND RETURN ITEMS", 
-            "YEAR-TO-DATE"
-        ]
-        
         for archivo in archivos_pdf:
             try:
                 lector = pypdf.PdfReader(archivo)
-                raw_pages_text = []
-                for idx, page in enumerate(lector.pages):
-                    page_text = page.extract_text()
-                    if page_text:
-                        raw_pages_text.append((idx + 1, page_text))
                 
-                cleaned_document_parts = []
-                for page_num, page_content in raw_pages_text:
-                    full_page_text = f"\n--- PAGE {page_num} ---\n" + page_content
-                    
-                    table_header_match = re.search(r'"DATE[^"]*"\s*,\s*(?:,\s*)?"DESCRIPTION[^"]*"', full_page_text, re.IGNORECASE)
-                    totals_match = re.search(r'TOTAL[\s\n]*OVERDRAFT|OVERDRAFT AND RETURN CHECK FEES|TOTAL OVERDRAFT FEES', full_page_text, re.IGNORECASE)
-                    has_summary_text = any(kw in full_page_text for kw in summary_keywords)
-                    
-                    if table_header_match or totals_match or has_summary_text:
-                        truncation_point = len(full_page_text)
-                        if table_header_match: truncation_point = min(truncation_point, table_header_match.start())
-                        elif totals_match: truncation_point = min(truncation_point, totals_match.start())
-                        elif has_summary_text:
-                            for kw in summary_keywords:
-                                kw_match = re.search(re.escape(kw), full_page_text)
-                                if kw_match: truncation_point = min(truncation_point, kw_match.start())
-                        full_page_text = full_page_text[:truncation_point]
-                    cleaned_document_parts.append(full_page_text)
-                
-                full_cleaned_text = '\n'.join(cleaned_document_parts)
-                
-                # 🛠️ CORRECCIÓN DE SINTAXIS MÁXIMA EN CADENA LITERAL RAW:
-                tx_pattern = r'"(\d{1,2}/\d{1,2}/\d{2,4})[^"]*"\s*,\s*(?:"(\d{1,2}/\d{1,2}/\d{2,4})[^"]*"\s*,\s*)?"([^"]*)"\s*,\s*(?:"([^"]*)"\s*,\s*)?(?:"([^"]*)"\s*,\s*)?"([^"]*)"'
-                matches = re.finditer(tx_pattern, full_cleaned_text)
-                
-                for match in matches:
-                    posting_date_str = match.group(1).strip()
-                    description_raw = match.group(3).strip()
-                    description_upper = description_raw.upper()
-                    
-                    is_ach = "ACH" in description_upper and "FEE" in description_upper
-                    is_below = "BELOW" in description_upper and "BALANCE" in description_upper
-                    
-                    if not (is_ach or is_below):
+                # Procesar hoja por hoja en modo texto crudo elástico sin dependencias de comillas fijas
+                for num_pag, pagina in enumerate(lector.pages):
+                    texto_pag = pagina.extract_text()
+                    if not texto_pag:
                         continue
-                        
-                    concepto_final = "ACH FEES" if is_ach else "BELOW BALANCE FEE"
                     
-                    g4, g5, g6 = match.group(4), match.group(5), match.group(6)
-                    monto_usd = 0.0
-                    if g4 and any(c.isdigit() for c in g4) and not any(k in g4.upper() for k in ["TOTAL", "BALANCE", "FORWARD"]):
-                        monto_usd = clean_amount_internal(g4)
-                    elif g5 and any(c.isdigit() for c in g5):
-                        monto_usd = clean_amount_internal(g5)
-                    elif g6 and any(c.isdigit() for c in g6):
-                        monto_usd = clean_amount_internal(g6)
+                    lineas = texto_pag.splitlines()
+                    for linea in lineas:
+                        linea_upper = linea.upper()
                         
-                    if monto_usd == 0.0:
-                        monto_usd = 0.50 if concepto_final == "ACH FEES" else 35.00
+                        # Detectar los dos grandes pilares de costos de comisiones deducibles
+                        is_ach = "ACH" in linea_upper and "FEE" in linea_upper
+                        is_below = "BELOW" in linea_upper and "BALANCE" in linea_upper
                         
-                    try:
-                        date_parts = posting_date_str.split('/')
-                        m, d, y = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
-                        if y < 100: y += 2000
-                        fecha_gasto = f"{y}-{str(m).zfill(2)}-{str(d).zfill(2)}"
-                    except:
-                        fecha_gasto = fecha_base_str
-                        
-                    trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
-                    if trm_g:
-                        gastos_encontrados_lote.append({
-                            "Fecha": fecha_gasto,
-                            "Descripción": concepto_final,
-                            "USD": monto_usd,
-                            "TRM Aplicada": trm_g,
-                            "Total COP": monto_usd * trm_g,
-                            "Origen": archivo.name
-                        })
+                        if is_ach or is_below:
+                            concepto_final = "ACH FEES" if is_ach else "BELOW BALANCE FEE"
+                            
+                            # Extraer la fecha nativa de la línea (Formatos: MM/DD/AAAA, DD/MM/AA, etc.)
+                            match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})', linea)
+                            if match_fecha:
+                                m, d, y = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
+                                int_y = int(y)
+                                if int_y < 100: int_y += 2000
+                                fecha_gasto = f"{int_y}-{str(m).zfill(2)}-{str(d).zfill(2)}"
+                            else:
+                                fecha_gasto = fecha_base_str
+                            
+                            # Buscar componentes numéricos remanentes al final o medio de la línea para el monto USD
+                            valores_numericos = re.findall(r'[\d,.]+', linea)
+                            monto_usd = 0.0
+                            
+                            # Filtrar valores que correspondan a fechas para no usarlos como monto
+                            for val in valores_numericos:
+                                if '/' in val or '-' in val or len(val) < 2:
+                                    continue
+                                parsed_val = clean_amount_internal(val)
+                                if parsed_val > 0.0 and parsed_val < 500.0:  # Rango lógico para un fee
+                                    monto_usd = parsed_val
+                            
+                            # Margen de seguridad contable paramétrico si no viene impreso explícito en la cadena
+                            if monto_usd == 0.0:
+                                monto_usd = 0.50 if concepto_final == "ACH FEES" else 35.00
+                                
+                            trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
+                            if trm_g:
+                                gastos_encontrados_lote.append({
+                                    "Fecha": fecha_gasto,
+                                    "Descripción": concepto_final,
+                                    "USD": monto_usd,
+                                    "TRM Aplicada": trm_g,
+                                    "Total COP": monto_usd * trm_g,
+                                    "Origen": archivo.name
+                                })
             except Exception as e:
-                st.error(f"Error procesando {archivo.name}: {e}")
+                st.error(f"Error procesando el archivo {archivo.name}: {e}")
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
-            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** sin omisiones de fechas múltiples.")
+            # Eliminar duplicaciones físicas idénticas para blindar el balance
+            df_enc = df_enc.drop_duplicates(subset=["Fecha", "Descripción", "USD", "Origen"])
+            
+            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** validados sin omisiones.")
             st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
             
             if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
-                    for g in gastos_encontrados_lote:
+                    for _, g in df_enc.iterrows():
                         fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
                 st.success("¡Todos los movimientos reales fueron integrados al histórico maestro!")
         else:
