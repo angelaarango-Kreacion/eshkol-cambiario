@@ -80,7 +80,6 @@ st.markdown("""
         border-bottom: 5px solid #39B54A;
         box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.15);
         overflow: hidden;
-        /* FLEXBOX CONTROLLER: Centrado vertical nativo e indestructible */
         display: flex;
         align-items: center;
         padding-left: 4%;
@@ -348,7 +347,6 @@ with tab0:
     if archivos_pdf:
         gastos_encontrados_lote = []
         
-        # Función auxiliar de limpieza matemática precisa de montos
         def clean_amount_internal(val_str: str) -> float:
             if not val_str: return 0.0
             cleaned = val_str.replace('\n', '').replace(' ', '')
@@ -406,8 +404,8 @@ with tab0:
                 
                 full_cleaned_text = '\n'.join(cleaned_document_parts)
                 
-                # REGEX ESTRUCTURAL: Mapea la tabla nativa de Davivenda
-                tx_pattern = r'"(\d{1,2}/\d{1,2}/\d{2,4})[^"]*"\s*,\s*(?:"(\d{1,2}/\d{1,2}/\d{2,4})[^"]*"\s*,\s*)?"([^"]*)"\s*,\s*(?:"([^"]*)"\s*,\s*)?(?:"([^"]*)"\s*,\s*)?"([^"]*)""
+                # 🛠️ CORRECCIÓN DE SINTAXIS MÁXIMA EN CADENA LITERAL RAW:
+                tx_pattern = r'"(\d{1,2}/\d{1,2}/\d{2,4})[^"]*"\s*,\s*(?:"(\d{1,2}/\d{1,2}/\d{2,4})[^"]*"\s*,\s*)?"([^"]*)"\s*,\s*(?:"([^"]*)"\s*,\s*)?(?:"([^"]*)"\s*,\s*)?"([^"]*)"'
                 matches = re.finditer(tx_pattern, full_cleaned_text)
                 
                 for match in matches:
@@ -574,4 +572,47 @@ with tab3:
         try:
             lineas_texto = archivo_subido.getvalue().decode("utf-8").splitlines()
             if st.button("🚀 Procesar Históricos"):
-                dicc
+                dicc_actual = cargar_trm_locales()
+                contador = 0
+                patron_fecha = r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})'
+                for linea in lineas_texto:
+                    celdas = linea.split(';')
+                    fecha_actual = None
+                    for celda in celdas:
+                        celda_limpia = celda.strip()
+                        if not celda_limpia: continue
+                        match_fecha = re.search(patron_fecha, celda_limpia)
+                        if match_fecha:
+                            try:
+                                d, m, a = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
+                                fecha_actual = f"{a}-{m.zfill(2)}-{d.zfill(2)}"
+                                continue
+                            except: fecha_actual = None
+                        if fecha_actual and '$' in celda_limpia:
+                            try:
+                                t_str = celda_limpia.replace('$', '').replace(' ', '').strip()
+                                if ',' in t_str and '.' in t_str: t_str = t_str.replace('.', '').replace(',', '.')
+                                elif ',' in t_str: t_str = t_str.replace(',', '.')
+                                t_clean = float(t_str)
+                                if t_clean > 1000: 
+                                    dicc_actual[fecha_actual] = t_clean
+                                    contador += 1
+                                    fecha_actual = None
+                            except: pass
+                guardar_trm_locales(dicc_actual)
+                st.success(f"¡Sincronizados {contador:,} registros antiguos!")
+        except Exception as e: st.error(f"Error: {e}")
+
+with tab4:
+    st.subheader("🧹 Formatear Aplicación (Cierre Fiscal)")
+    st.warning("⚠️ ¡Atención Contable! Esta acción borrará de forma permanente los históricos calculados.")
+    confirmacion = st.checkbox("Confirmo el formato absoluto.")
+    if confirmacion:
+        if st.button("🚨 EJECUTAR BORRADO DEFINITIVO"):
+            with open(FILE_GASTOS, "w", encoding="utf-8") as f: f.write("") 
+            with open(FILE_TRM, "w", encoding="utf-8") as f: f.write("") 
+            st.cache_data.clear()
+            st.success("¡Sistema purgado!")
+            st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
