@@ -339,7 +339,7 @@ tab0, tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab0:
-    st.subheader("🕵️‍♂️ Extractor Avanzado Davivenda (Garantía de Unicidad por Fila)")
+    st.subheader("🕵️‍♂️ Extractor Avanzado Davivenda (Filtro Cronológico Puro)")
     archivos_pdf = st.file_uploader("Cargar extractos bancarios (.pdf)", type=["pdf"], accept_multiple_files=True)
     
     if archivos_pdf:
@@ -366,6 +366,7 @@ with tab0:
             try:
                 lector = pypdf.PdfReader(archivo)
                 fila_index = 0
+                fuera_de_tiempo_diario = False # Interruptor para cortar la lectura al llegar a los cuadros informativos finales
                 
                 for num_pag, pagina in enumerate(lector.pages):
                     texto_pag = pagina.extract_text()
@@ -376,8 +377,13 @@ with tab0:
                     for linea in lineas:
                         linea_upper = linea.upper()
                         
-                        # 🚨 EXCLUSIÓN CONTABLE CRÍTICA: Descartar de raíz cuadros informativos y resúmenes anuales
-                        if any(x in linea_upper for x in ["TOTAL OVERDRAFT", "YEAR-TO-DATE", "BROUGHT FORWARD", "ANNUAL PERCENT"]):
+                        # 🚨 DETECTOR CRÍTICO DE CIERRE DE MOVIMIENTOS REALES
+                        # Si la línea toca resúmenes anuales o tablas informativas acumuladas, se activa el freno permanente
+                        if any(x in linea_upper for x in ["OVERDRAFT AND RETURN", "YEAR-TO-DATE", "ANNUAL PERCENT", "BROUGHT FORWARD"]):
+                            fuera_de_tiempo_diario = True
+                            
+                        # Si ya salimos del diario de transacciones, ignoramos por completo cualquier coincidencia fantasma posterior
+                        if fuera_de_tiempo_diario:
                             continue
                             
                         is_ach = "ACH" in linea_upper and "FEE" in linea_upper
@@ -386,7 +392,6 @@ with tab0:
                         if is_ach or is_below:
                             concepto_final = "ACH FEES" if is_ach else "BELOW BALANCE FEE"
                             
-                            # Extraer valores numéricos reales presentes en la línea para el débito
                             valores_numericos = re.findall(r'[\d,.]+', linea)
                             monto_usd = 0.0
                             
@@ -394,12 +399,10 @@ with tab0:
                                 if '/' in val or '-' in val or len(val) < 2:
                                     continue
                                 parsed_val = clean_amount_internal(val)
-                                # Validar rangos exactos de transacciones individuales reales
                                 if 0.10 <= parsed_val <= 45.00:
                                     monto_usd = parsed_val
                                     break
                             
-                            # Si la línea tiene la palabra pero no el cargo real al lado (p.ej. es un encabezado intermedio) se descarta
                             if monto_usd == 0.0:
                                 continue
                                 
@@ -412,7 +415,6 @@ with tab0:
                                 if int_y < 100: int_y += 2000
                                 fecha_gasto = f"{int_y}-{str(m).zfill(2)}-{str(d).zfill(2)}"
                             else:
-                                # Si no tiene fecha en la línea, hereda la del estado de cuenta
                                 fecha_gasto = fecha_base_str
                                 
                             trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
@@ -430,167 +432,4 @@ with tab0:
                 st.error(f"Error procesando el archivo {archivo.name}: {e}")
                 
         if gastos_encontrados_lote:
-            df_enc = pd.DataFrame(gastos_encontrados_lote)
-            # El drop_duplicates blinda transacciones por posición pero remueve residuos idénticos de paginación externa
-            df_enc = df_enc.drop_duplicates(subset=["Fecha", "Descripción", "USD", "Origen", "Fila_PDF"])
-            
-            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** validados sin omisiones.")
-            st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
-            
-            if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
-                with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
-                    for _, g in df_enc.iterrows():
-                        fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
-                st.success("¡Todos los movimientos reales fueron integrados al histórico maestro!")
-        else:
-            st.warning("No se identificaron comisiones deducibles en ninguno de los archivos cargados.")
-
-with tab1:
-    st.subheader("Cruce Manual de Gastos Bancarios")
-    c_izq, c_der = st.columns(2)
-    with c_izq:
-        st.info(f"Fecha de liquidación: **{fecha_base_dt.strftime('%d/%m/%Y')}**")
-        desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW BALANCE FEE"])
-        usd_gasto = st.number_input("Monto (USD)", min_value=0.0, step=0.01, value=0.50 if desc_gasto=="ACH FEES" else 35.00)
-    with c_der:
-        if trm_inspeccionada and usd_gasto > 0:
-            cop_equivalente = usd_gasto * trm_inspeccionada
-            st.success(f"TRM Aplicada: ${trm_inspeccionada:,.2f}")
-            st.metric("Total Equivalente en COP", f"${cop_equivalente:,.2f}")
-            
-            if st.button("💾 Guardar Gasto Manual"):
-                with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
-                    fg.write(f"{fecha_base_str};{desc_gasto};{usd_gasto};{trm_inspeccionada};{cop_equivalente}\n")
-                st.success("¡Gasto registrado con éxito!")
-
-with tab2:
-    st.subheader("📊 Reportes Financieros Consolidados e Histórico Cambiario")
-    
-    lineas_trm_hist = []
-    for f_trm, v_trm in sorted(trm_datos.items(), reverse=True):
-        lineas_trm_hist.append({"Fecha": f_trm, "TRM Oficial (COP)": v_trm})
-    df_trm_maestro = pd.DataFrame(lineas_trm_hist)
-    
-    st.markdown("#### 🔍 Consultar Histórico de TRM por Mes")
-    c_f1, c_f2 = st.columns(2)
-    filtro_ano = c_f1.selectbox("Filtrar Año TRM", list(range(fecha_hoy_dt.year, 2015, -1)), key="f_ano")
-    filtro_mes = c_f2.selectbox("Filtrar Mes TRM", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=fecha_hoy_dt.month - 1)
-    
-    meses_num = {"Enero":"01", "Febrero":"02", "Marzo":"03", "Abril":"04", "Mayo":"05", "Junio":"06", "Julio":"07", "Agosto":"08", "Septiembre":"09", "Octubre":"10", "Noviembre":"11", "Diciembre":"12"}
-    prefijo_busqueda = f"{filtro_ano}-{meses_num[filtro_mes]}"
-    
-    df_trm_filtrado = df_trm_maestro[df_trm_maestro["Fecha"].str.startswith(prefijo_busqueda)]
-    
-    if not df_trm_filtrado.empty:
-        st.caption(f"Mostrando tasas de cambio registradas para {filtro_mes} del {filtro_ano}")
-        st.dataframe(df_trm_filtrado, use_container_width=True, hide_index=True)
-    else:
-        st.info("No se hallaron registros locales para el periodo seleccionado.")
-        
-    st.write("---")
-    
-    if os.path.exists(FILE_GASTOS):
-        lineas_gastos = []
-        with open(FILE_GASTOS, "r", encoding="utf-8") as fg:
-            for line in fg:
-                p = line.strip().split(";")
-                if len(p) == 5:
-                    lineas_gastos.append({
-                        "Fecha": p[0], "Descripción": p[1], 
-                        "USD": float(p[2]), "TRM Usada": float(p[3]), "Total COP": float(p[4])
-                    })
-        if lineas_gastos:
-            df_gastos = pd.DataFrame(lineas_gastos)
-            df_gastos['Fecha_DT'] = pd.to_datetime(df_gastos['Fecha'])
-            
-            df_semanal = df_gastos.set_index('Fecha_DT').resample('W').sum(numeric_only=True).reset_index()
-            df_semanal['Corte Semana'] = df_semanal['Fecha_DT'].dt.strftime('%Y-%m-%d')
-            df_semanal_final = df_semanal[['Corte Semana', 'USD', 'Total COP']]
-            
-            df_mensual = df_gastos.set_index('Fecha_DT').resample('ME').sum(numeric_only=True).reset_index()
-            df_mensual['Corte Mes'] = df_mensual['Fecha_DT'].dt.strftime('%Y-%m')
-            df_mensual_final = df_mensual[['Corte Mes', 'USD', 'Total COP']]
-            
-            df_detalles_final = df_gastos[["Fecha", "Descripción", "USD", "TRM Usada", "Total COP"]]
-
-            c_rep1, c_rep2 = st.columns(2)
-            with c_rep1:
-                st.write("**📊 Consolidado Acumulado Semanal**")
-                st.dataframe(df_semanal_final, use_container_width=True, hide_index=True)
-            with c_rep2:
-                st.write("**📊 Consolidado Acumulado Mensual**")
-                st.dataframe(df_mensual_final, use_container_width=True, hide_index=True)
-            
-            st.write("📋 **Libro Diario de Detalles**")
-            st.dataframe(df_detalles_final, use_container_width=True, hide_index=True)
-            
-            output_excel = io.BytesIO()
-            with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
-                df_detalles_final.to_excel(writer, sheet_name='📋 Detalle Diario', index=False)
-                df_semanal_final.to_excel(writer, sheet_name='📅 Resumen Semanal', index=False)
-                df_mensual_final.to_excel(writer, sheet_name='🗓️ Resumen Mensual', index=False)
-                df_trm_maestro.to_excel(writer, sheet_name='📈 Histórico Completo TRM', index=False)
-            
-            excel_data = output_excel.getvalue()
-            
-            st.download_button(
-                label="🟢 DESCARGAR AUDITORÍA COMPLETA EXCEL (.XLSX)",
-                data=excel_data,
-                file_name=f"Informe_Financiero_Eshkol_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        else: st.info("No hay transacciones registradas en el ciclo activo.")
-    else: st.info("No hay transacciones registradas en el ciclo activo.")
-
-with tab3:
-    st.subheader("⚙️ Inyección de Respaldos")
-    archivo_subido = st.file_uploader("Cargar CSV maestro", type=["csv"])
-    if archivo_subido is not None:
-        try:
-            lineas_texto = archivo_subido.getvalue().decode("utf-8").splitlines()
-            if st.button("🚀 Procesar Históricos"):
-                dicc_actual = cargar_trm_locales()
-                contador = 0
-                patron_fecha = r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})'
-                for linea in lineas_texto:
-                    celdas = linea.split(';')
-                    fecha_actual = None
-                    for celda in celdas:
-                        celda_limpia = celda.strip()
-                        if not celda_limpia: continue
-                        match_fecha = re.search(patron_fecha, celda_limpia)
-                        if match_fecha:
-                            try:
-                                d, m, a = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
-                                fecha_actual = f"{a}-{m.zfill(2)}-{d.zfill(2)}"
-                                continue
-                            except: fecha_actual = None
-                        if fecha_actual and '$' in celda_limpia:
-                            try:
-                                t_str = celda_limpia.replace('$', '').replace(' ', '').strip()
-                                if ',' in t_str and '.' in t_str: t_str = t_str.replace('.', '').replace(',', '.')
-                                elif ',' in t_str: t_str = t_str.replace(',', '.')
-                                t_clean = float(t_str)
-                                if t_clean > 1000: 
-                                    dicc_actual[fecha_actual] = t_clean
-                                    contador += 1
-                                    fecha_actual = None
-                            except: pass
-                guardar_trm_locales(dicc_actual)
-                st.success(f"¡Sincronizados {contador:,} registros antiguos!")
-        except Exception as e: st.error(f"Error: {e}")
-
-with tab4:
-    st.subheader("🧹 Formatear Aplicación (Cierre Fiscal)")
-    st.warning("⚠️ ¡Atención Contable! Esta acción borrará de forma permanente los históricos calculados.")
-    confirmacion = st.checkbox("Confirmo el formato absoluto.")
-    if confirmacion:
-        if st.button("🚨 EJECUTAR BORRADO DEFINITIVO"):
-            with open(FILE_GASTOS, "w", encoding="utf-8") as f: f.write("") 
-            with open(FILE_TRM, "w", encoding="utf-8") as f: f.write("") 
-            st.cache_data.clear()
-            st.success("¡Sistema purgado!")
-            st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)
+            df_enc = pd.DataFrame(gastos
