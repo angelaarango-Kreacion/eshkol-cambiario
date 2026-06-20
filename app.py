@@ -5,11 +5,12 @@ import re
 from datetime import datetime, timedelta
 import urllib.request
 import json
+import altair as alt
 import io
 import base64
 
 # =========================================================================
-# 🚨 1. CONFIGURACIÓN GLOBAL DE STREAMLIT (PREMIUM CLEAN-GREEN UI)
+# 🚨 1. CONFIGURACIÓN GLOBAL DE STREAMLIT (DEBE SER LA PRIMERA LÍNEA)
 # =========================================================================
 st.set_page_config(
     page_title="Control Financiero - Eshkol Premium", 
@@ -17,7 +18,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Instalación e importación silenciosa de dependencias ---
+# --- Instalación e importación silenciosa de dependencias contables ---
 try:
     import pypdf
 except ImportError:
@@ -54,7 +55,7 @@ for nombre in nombres_posibles:
         break
 
 # =========================================================================
-# 🎨 INYECCIÓN DE ESTILOS CSS CLEAN-PREMIUM
+# 🎨 INYECCIÓN DE ESTILOS CSS CLEAN-PREMIUM CORREGIDOS
 # =========================================================================
 st.markdown("""
 <style>
@@ -150,11 +151,25 @@ st.markdown("""
         font-weight: 700 !important;
         border-bottom: 3px solid #39B54A !important;
     }
+    div.stButton > button {
+        background-color: rgba(57, 181, 74, 0.03) !important;
+        color: #16251b !important;
+        font-weight: 600 !important;
+        border: 1.5px solid rgba(22, 37, 27, 0.25) !important;
+        padding: 0.6rem 1.8rem !important;
+        border-radius: 6px !important;
+        width: 100% !important;
+    }
+    div.stButton > button:hover {
+        background-color: #16251b !important;
+        color: #FFFFFF !important;
+        border-color: #16251b !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================================================
-# 🌿 MONTAJE DEL BANNER CORPORATIVO
+# 🌿 MONTAJE INTEGRADO DEL BANNER Y IDENTIDAD CORPORATIVA OVERLAY
 # =========================================================================
 url_fondo = f"data:image/png;base64,{imagen_fondo_64}" if imagen_fondo_64 else ""
 url_logo = f"data:image/png;base64,{logo_base64}" if logo_base64 else ""
@@ -173,7 +188,7 @@ if logo_base64:
 html_banner += """
             <div class="text-titles-block">
                 <h1 class="app-main-title">CONTROL FINANCIERO<br>Y CAMBIARIO</h1>
-                <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v3.0</p>
+                <p class="app-sub-title">ESHKOL PREMIUM S.A.S &nbsp;|&nbsp; MÓDULO CONTABLE v3.1</p>
             </div>
         </div>
     </div>
@@ -181,13 +196,14 @@ html_banner += """
 """
 st.markdown(html_banner, unsafe_allow_html=True)
 
+# Contenedor global del espacio de trabajo
 st.markdown('<div class="eshkol-body">', unsafe_allow_html=True)
 
 FILE_TRM = "trm_almacen.txt"
 FILE_GASTOS = "gastos_almacen.txt"
 
 # =========================================================================
-# 📈 MOTOR DE TRM (CAPTURA HISTÓRICA SUI GENERIS)
+# 📈 MOTOR DE SINCRONIZACIÓN TRM MASIVA
 # =========================================================================
 def cargar_trm_locales():
     dicc = {}
@@ -219,8 +235,10 @@ def sincronizar_trm_en_bloque():
                     valor = float(reg['valor'])
                     f_desde = reg['vigenciadesde'].split('T')[0]
                     f_hasta = reg['vigenciahasta'].split('T')[0]
+                    
                     dt_desde = datetime.strptime(f_desde, "%Y-%m-%d")
                     dt_hasta = datetime.strptime(f_hasta, "%Y-%m-%d")
+                    
                     paso = dt_desde
                     while paso <= dt_hasta:
                         dicc[paso.strftime("%Y-%m-%d")] = valor
@@ -243,18 +261,18 @@ def obtener_trm_inteligente(dicc, fecha_str):
         pass
     return None
 
-with st.spinner("Sincronizando pasarela cambiaria del Estado..."):
+with st.spinner("Sincronizando pasarela cambiaria en tiempo real..."):
     trm_datos = sincronizar_trm_en_bloque()
 
 fecha_hoy_dt = datetime.now()
 fecha_hoy_str = fecha_hoy_dt.strftime("%Y-%m-%d")
 
 # ==========================================
-# 📅 CONTROL DE TIEMPO INDEPENDIENTE
+# 🗺️ CONTROLES CRONOLÓGICOS
 # ==========================================
 st.markdown("### 📅 Eje de Tiempo Sincronizado")
 c_ano, c_mes, c_dia = st.columns(3)
-ano_sel = c_ano.selectbox("Año de Consulta", list(range(2026, 2015, -1)))
+ano_sel = c_ano.selectbox("Año de Consulta", list(range(fecha_hoy_dt.year, 2015, -1)))
 mes_sel = c_mes.selectbox("Mes de Consulta", list(range(1, 13)), index=fecha_hoy_dt.month - 1)
 dia_sel = c_dia.selectbox("Día de Consulta", list(range(1, 32)), index=fecha_hoy_dt.day - 1)
 
@@ -267,6 +285,42 @@ fecha_base_str = fecha_base_dt.strftime("%Y-%m-%d")
 trm_hoy = obtener_trm_inteligente(trm_datos, fecha_hoy_str)
 trm_inspeccionada = obtener_trm_inteligente(trm_datos, fecha_base_str)
 
+# --- PANEL DE TENDENCIA SEMANAL ---
+st.write(" ")
+st.markdown("#### 📈 Tendencia de la Moneda Oficial (Ventana de 7 días)")
+cols_dias = st.columns(7)
+lista_fechas_semana = []
+lista_valores_semana = []
+dias_espanol = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+
+for i in range(0, 7):
+    f_ant_dt = fecha_base_dt - timedelta(days=6-i)
+    f_ant_str = f_ant_dt.strftime("%Y-%m-%d")
+    trm_ant = obtener_trm_inteligente(trm_datos, f_ant_str)
+    nombre_dia = dias_espanol[f_ant_dt.weekday()]
+    
+    etiqueta = f"{nombre_dia} {f_ant_dt.strftime('%d/%m')}"
+    lista_fechas_semana.append(etiqueta)
+    lista_valores_semana.append(trm_ant if trm_ant else 0.0)
+    
+    with cols_dias[i]:
+        if trm_ant:
+            st.metric(label=etiqueta, value=f"${trm_ant:,.2f}")
+        else:
+            st.metric(label=etiqueta, value="N/A")
+
+valores_validos = [v for v in lista_valores_semana if v > 1000]
+if valores_validos:
+    df_grafico = pd.DataFrame({'Día': lista_fechas_semana, 'TRM ($)': lista_valores_semana})
+    min_v, max_v = min(valores_validos), max(valores_validos)
+    
+    chart = alt.Chart(df_grafico).mark_line(point=True, color='#233d2c', strokeWidth=3).encode(
+        x=alt.X('Día:N', sort=None, title='Días Evaluados'),
+        y=alt.Y('TRM ($):Q', scale=alt.Scale(domain=[min_v - 25, max_v + 25], zero=False), title='COP Oficial')
+    ).properties(height=160)
+    st.altair_chart(chart, use_container_width=True)
+
+# --- RECUADROS DE SEGUIMIENTO ---
 st.write(" ")
 col_r1, col_r2 = st.columns(2)
 with col_r1: 
@@ -275,21 +329,25 @@ with col_r2:
     st.metric(label="🔵 TRM FECHA SELECCIONADA", value=f"$ {trm_inspeccionada:,.2f}" if trm_inspeccionada else "SIN REGISTRO")
 
 # ==========================================
-# 🗂️ PANELES OPERATIVOS CONTABLES
+# 🗂️ MÓDULOS OPERATIVOS CONTABLES
 # ==========================================
 st.write(" ")
-tab0, tab1, tab2 = st.tabs(["📄 Procesar Extractos PDF", "💰 Registrar Gasto Manual", "📊 Consolidados"])
+tab0, tab1, tab2, tab3, tab4 = st.tabs([
+    "📄 Procesar Extractos PDF", 
+    "💰 Registrar Gasto Manual", 
+    "📊 Consolidados e Informes Excel", 
+    "⚙️ Migración CSV",
+    "🧹 Reinicio Maestro"
+])
 
-# --- TAB 0: EXTRACTOR CON MÁQUINA DE ESTADOS (INALTERADO) ---
+# --- TAB 0: DETECCIÓN QUIRÚRGICA DE EXTRACTOS CON RECONSTRUCCIÓN VECTORIAL ---
 with tab0:
-    st.subheader("🕵️‍♂️ Extractor Avanzado Davivenda (Auditoría Anti-Duplicación por Máquina de Estados)")
+    st.subheader("🕵️‍♂️ Extractor Quirúrgico Davivenda (Garantía de Unicidad y Reconstrucción Multilínea)")
     archivos_pdf = st.file_uploader("Cargar extractos bancarios (.pdf)", type=["pdf"], accept_multiple_files=True)
     
     if archivos_pdf:
         gastos_encontrados_lote = []
-        patron_fecha = re.compile(r'\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b')
-        patron_ach_flexible = re.compile(r'ACH\s*FEES', re.IGNORECASE)
-        patron_minimum_flexible = re.compile(r'BELOW\s*(?:MINIMUM\s*)?BALANCE\s*FEES?', re.IGNORECASE)
+        patron_fecha = re.compile(r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b')
         
         for archivo in archivos_pdf:
             try:
@@ -299,34 +357,56 @@ with tab0:
                     if not texto_original:
                         continue
                     
+                    # 🛑 CORTOCIRCUITO ANTI-DUPLICADOS (Evita leer cuadros resumen al final de página)
+                    texto_limpio_ledger = ""
                     lineas_pag = texto_original.splitlines()
-                    in_summary_zone = False  
-                    fecha_actual_tracker = None
+                    for linea_pag in lineas_pag:
+                        linea_pag_upper = linea_pag.upper()
+                        if any(t in linea_pag_upper for t in ["OVERDRAFT AND RETURN", "FEES DESCRIPTION FOR THIS PERIOD", "TOTAL OVERDRAFT FEES", "ACH.NSF AND RETURN"]):
+                            break
+                        texto_limpio_ledger += linea_pag + "\n"
                     
-                    for idx, linea in enumerate(lineas_pag):
-                        linea_upper = linea.upper()
-                        
-                        indicadores_cierre = [
-                            "TOTAL DR'S", "ANNUAL PERCENT", "OVERDRAFT AND RETURN", 
-                            "YEAR-TO-DATE", "INTEREST-BEARING", "FEES DESCRIPTION"
-                        ]
-                        if any(ind in linea_upper for ind in indicadores_cierre):
-                            in_summary_zone = True
-                        
-                        if in_summary_zone:
+                    # 🛠️ MOTOR DE RECONSTRUCCIÓN DE FILAS: Junta líneas rotas o celdas de múltiples párrafos
+                    lineas_brutas = texto_limpio_ledger.splitlines()
+                    lineas_reconstruidas = []
+                    
+                    for l_bruta in lineas_brutas:
+                        l_strip = l_bruta.strip()
+                        if not l_strip:
                             continue
                         
-                        match_fecha = patron_fecha.search(linea)
-                        if match_fecha:
-                            mes, dia, ano = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
-                            if len(ano) == 2: ano = f"20{ano}"
-                            fecha_actual_tracker = f"{ano}-{mes.zfill(2)}-{dia.zfill(2)}"
+                        # Si los primeros 20 caracteres contienen una fecha, es una transacción nueva
+                        if patron_fecha.search(l_strip[:20]):
+                            lineas_reconstruidas.append(l_strip)
+                        else:
+                            # Si no tiene fecha, es una celda fragmentada (continuación de la anterior)
+                            if lineas_reconstruidas:
+                                lineas_reconstruidas[-1] += " " + l_strip
+                            else:
+                                lineas_reconstruidas.append(l_strip)
+                    
+                    # 🔍 AUDITORÍA DE DATOS DE FILAS COMPUESTAS
+                    for linea in lineas_reconstruidas:
+                        linea_upper = linea.upper()
                         
-                        es_ach = bool(patron_ach_flexible.search(linea_upper))
-                        es_min = bool(patron_minimum_flexible.search(linea_upper))
+                        # Ignorar encabezados redundantes residuales
+                        if any(x in linea_upper for x in ["SUMMARY", "RESUMEN", "YEAR-TO-DATE", "BROUGHT FORWARD", "CARRY OVER", "BALANCE FROM LAST"]):
+                            continue
+                        
+                        # Detección de gastos precisa e inmune a inversiones de texto ("ACH FEES" o "FEES ACH")
+                        es_ach = ("ACH" in linea_upper and "FEES" in linea_upper)
+                        es_min = ("BELOW" in linea_upper and "BALANCE" in linea_upper) or ("MINIMUM" in linea_upper and "BALANCE" in linea_upper and "FEE" in linea_upper)
                         
                         if es_ach or es_min:
-                            fecha_gasto = fecha_actual_tracker if fecha_actual_tracker else fecha_base_str
+                            match_fecha = patron_fecha.search(linea)
+                            if match_fecha:
+                                mes, dia, ano = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
+                                if len(ano) == 2: 
+                                    ano = f"20{ano}"
+                                fecha_gasto = f"{ano}-{mes.zfill(2)}-{dia.zfill(2)}"
+                            else:
+                                fecha_gasto = fecha_base_str
+                                
                             concepto_final = "ACH FEES" if es_ach else "BELOW MINIMUM BALANCE FEE"
                             monto_usd = 0.50 if es_ach else 35.00
                             
@@ -345,22 +425,23 @@ with tab0:
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
-            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** limpios de duplicados.")
+            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** sin omisiones por saltos de línea.")
             st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
             
             if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
                     for g in gastos_encontrados_lote:
                         fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
-                st.success("¡Libro maestro actualizado con éxito!")
+                st.success("¡Todos los movimientos reales fueron integrados al histórico maestro!")
         else:
-            st.warning("No se identificaron comisiones deducibles reales en el archivo.")
+            st.warning("No se identificaron comisiones deducibles en ninguno de los archivos cargados.")
 
-# --- TAB 1: REGISTRO MANUAL ---
+# --- TAB 1: REGISTRO MANUAL CONTABLE ---
 with tab1:
     st.subheader("Cruce Manual de Gastos Bancarios")
     c_izq, c_der = st.columns(2)
     with c_izq:
+        st.info(f"Fecha de liquidación: **{fecha_base_dt.strftime('%d/%m/%Y')}**")
         desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW MINIMUM BALANCE FEE"])
         usd_gasto = st.number_input("Monto (USD)", min_value=0.0, step=0.01, value=0.50 if desc_gasto=="ACH FEES" else 35.00)
     with c_der:
@@ -368,76 +449,143 @@ with tab1:
             cop_equivalente = usd_gasto * trm_inspeccionada
             st.success(f"TRM Aplicada: ${trm_inspeccionada:,.2f}")
             st.metric("Total Equivalente en COP", f"${cop_equivalente:,.2f}")
+            
             if st.button("💾 Guardar Gasto Manual"):
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
                     fg.write(f"{fecha_base_str};{desc_gasto};{usd_gasto};{trm_inspeccionada};{cop_equivalente}\n")
-                st.success("¡Registrado con éxito!")
+                st.success("¡Gasto registrado con éxito!")
 
-# --- TAB 2: CONSOLIDADOS DIARIOS Y REINICIO MAESTRO (RESTITUIDO Y MEJORADO) ---
+# --- TAB 2: REPORTES CONSOLIDADOS DIARIOS/SEMANALES/MENSUALES ---
 with tab2:
-    st.subheader("📊 Consolidación General y Libro Diario")
+    st.subheader("📊 Reportes Financieros Consolidados e Histórico Cambiario")
     
-    if os.path.exists(FILE_GASTOS) and os.path.getsize(FILE_GASTOS) > 0:
-        try:
-            # Lectura del repositorio plano estructurado
-            df_master = pd.read_csv(
-                FILE_GASTOS, 
-                sep=";", 
-                names=["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP"], 
-                header=None
-            )
-            
-            # Bloque Superior de Métricas Consolidadas
-            c1, c2, c3 = st.columns(3)
-            c1.metric("📦 TRANSACCIONES CONTADAS", len(df_master))
-            c2.metric("💵 ACUMULADO TOTAL (USD)", f"$ {df_master['USD'].sum():,.2f}")
-            c3.metric("🇨🇴 EQUIVALENTE TOTAL (COP)", f"$ {df_master['Total COP'].sum():,.2f}")
-            
-            st.markdown("---")
-            
-            # Vista 1: Consolidado Agrupado por Día
-            st.markdown("### 🗓️ Consolidados Diarios")
-            df_diario = df_master.groupby("Fecha").agg({
-                "USD": "sum",
-                "Total COP": "sum",
-                "Descripción": "count"
-            }).reset_index().rename(columns={"Descripción": "Eventos"})
-            
-            st.dataframe(
-                df_diario.sort_values(by="Fecha", ascending=False), 
-                use_container_width=True, 
-                hide_index=True
-            )
-            
-            # Vista 2: Bitácora Transaccional Completa
-            st.markdown("### 🔍 Historial Detallado de Auditoría (Libro Auxiliar)")
-            st.dataframe(
-                df_master.sort_values(by="Fecha", ascending=False), 
-                use_container_width=True, 
-                hide_index=True
-            )
-            
-        except Exception as e:
-            st.error(f"Error procesando la estructura del libro contable: {e}")
+    lineas_trm_hist = []
+    for f_trm, v_trm in sorted(trm_datos.items(), reverse=True):
+        lineas_trm_hist.append({"Fecha": f_trm, "TRM Oficial (COP)": v_trm})
+    df_trm_maestro = pd.DataFrame(lineas_trm_hist)
+    
+    st.markdown("#### 🔍 Consultar Histórico de TRM por Mes")
+    c_f1, c_f2 = st.columns(2)
+    filtro_ano = c_f1.selectbox("Filtrar Año TRM", list(range(fecha_hoy_dt.year, 2015, -1)), key="f_ano")
+    filtro_mes = c_f2.selectbox("Filtrar Mes TRM", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=fecha_hoy_dt.month - 1)
+    
+    meses_num = {"Enero":"01", "Febrero":"02", "Marzo":"03", "Abril":"04", "Mayo":"05", "Junio":"06", "Julio":"07", "Agosto":"08", "Septiembre":"09", "Octubre":"10", "Noviembre":"11", "Diciembre":"12"}
+    prefijo_busqueda = f"{filtro_ano}-{meses_num[filtro_mes]}"
+    
+    df_trm_filtrado = df_trm_maestro[df_trm_maestro["Fecha"].str.startswith(prefijo_busqueda)]
+    
+    if not df_trm_filtrado.empty:
+        st.caption(f"Mostrando tasas de cambio registradas para {filtro_mes} del {filtro_ano}")
+        st.dataframe(df_trm_filtrado, use_container_width=True, hide_index=True)
     else:
-        st.info("El Libro Maestro se encuentra vacío. Procesa extractos PDF o añade gastos manuales para ver los consolidados.")
-
-    # --- BOTÓN DE REINICIO COMPLETO ---
-    st.markdown("---")
-    st.subheader("⚠️ Zona de Mantenimiento Crítico")
-    
-    with st.expander("🚨 SECCIÓN PELIGROSA: Reiniciar Base de Datos Contable", expanded=False):
-        st.warning("Al ejecutar esta acción borrarás permanentemente todas las transacciones consolidadas en el libro maestro.")
-        check_seguridad = st.checkbox("Entiendo los riesgos y confirmo que deseo purgar el historial actual por completo.")
+        st.info("No se hallaron registros locales para el periodo seleccionado.")
         
-        if check_seguridad:
-            if st.button("🔥 Ejecutar Reinicio Completo del Sistema", type="primary"):
-                try:
-                    if os.path.exists(FILE_GASTOS):
-                        os.remove(FILE_GASTOS)
-                    st.success("¡El sistema y el libro maestro han sido inicializados a cero con éxito!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"No se pudo limpiar el archivo: {e}")
+    st.write("---")
+    
+    if os.path.exists(FILE_GASTOS):
+        lineas_gastos = []
+        with open(FILE_GASTOS, "r", encoding="utf-8") as fg:
+            for line in fg:
+                p = line.strip().split(";")
+                if len(p) == 5:
+                    lineas_gastos.append({
+                        "Fecha": p[0], "Descripción": p[1], 
+                        "USD": float(p[2]), "TRM Usada": float(p[3]), "Total COP": float(p[4])
+                    })
+        if lineas_gastos:
+            df_gastos = pd.DataFrame(lineas_gastos)
+            df_gastos['Fecha_DT'] = pd.to_datetime(df_gastos['Fecha'])
+            
+            df_semanal = df_gastos.set_index('Fecha_DT').resample('W').sum(numeric_only=True).reset_index()
+            df_semanal['Corte Semana'] = df_semanal['Fecha_DT'].dt.strftime('%Y-%m-%d')
+            df_semanal_final = df_semanal[['Corte Semana', 'USD', 'Total COP']]
+            
+            df_mensual = df_gastos.set_index('Fecha_DT').resample('ME').sum(numeric_only=True).reset_index()
+            df_mensual['Corte Mes'] = df_mensual['Fecha_DT'].dt.strftime('%Y-%m')
+            df_mensual_final = df_mensual[['Corte Mes', 'USD', 'Total COP']]
+            
+            df_detalles_final = df_gastos[["Fecha", "Descripción", "USD", "TRM Usada", "Total COP"]]
+
+            c_rep1, c_rep2 = st.columns(2)
+            with c_rep1:
+                st.write("**📊 Consolidado Acumulado Semanal**")
+                st.dataframe(df_semanal_final, use_container_width=True, hide_index=True)
+            with c_rep2:
+                st.write("**📊 Consolidado Acumulado Mensual**")
+                st.dataframe(df_mensual_final, use_container_width=True, hide_index=True)
+            
+            st.write("📋 **Libro Diario de Detalles**")
+            st.dataframe(df_detalles_final, use_container_width=True, hide_index=True)
+            
+            output_excel = io.BytesIO()
+            with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
+                df_detalles_final.to_excel(writer, sheet_name='📋 Detalle Diario', index=False)
+                df_semanal_final.to_excel(writer, sheet_name='📅 Resumen Semanal', index=False)
+                df_mensual_final.to_excel(writer, sheet_name='🗓️ Resumen Mensual', index=False)
+                df_trm_maestro.to_excel(writer, sheet_name='📈 Histórico Completo TRM', index=False)
+            
+            excel_data = output_excel.getvalue()
+            
+            st.download_button(
+                label="🟢 DESCARGAR AUDITORÍA COMPLETA EXCEL (.XLSX)",
+                data=excel_data,
+                file_name=f"Informe_Financiero_Eshkol_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        else: st.info("No hay transacciones registradas en el ciclo activo.")
+    else: st.info("No hay transacciones registradas en el ciclo activo.")
+
+# --- TAB 3: MIGRACIÓN E INYECCIÓN CSV ---
+with tab3:
+    st.subheader("⚙️ Inyección de Respaldos")
+    archivo_subido = st.file_uploader("Cargar CSV maestro", type=["csv"])
+    if archivo_subido is not None:
+        try:
+            lineas_texto = archivo_subido.getvalue().decode("utf-8").splitlines()
+            if st.button("🚀 Procesar Históricos"):
+                dicc_actual = cargar_trm_locales()
+                contador = 0
+                patron_fecha = r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})'
+                for linea in lineas_texto:
+                    celdas = linea.split(';')
+                    fecha_actual = None
+                    for celda in celdas:
+                        celda_limpia = celda.strip()
+                        if not celda_limpia: continue
+                        match_fecha = re.search(patron_fecha, celda_limpia)
+                        if match_fecha:
+                            try:
+                                d, m, a = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
+                                fecha_actual = f"{a}-{m.zfill(2)}-{d.zfill(2)}"
+                                continue
+                            except: fecha_actual = None
+                        if fecha_actual and '$' in celda_limpia:
+                            try:
+                                t_str = celda_limpia.replace('$', '').replace(' ', '').strip()
+                                if ',' in t_str and '.' in t_str: t_str = t_str.replace('.', '').replace(',', '.')
+                                elif ',' in t_str: t_str = t_str.replace(',', '.')
+                                t_clean = float(t_str)
+                                if t_clean > 1000: 
+                                    dicc_actual[fecha_actual] = t_clean
+                                    contador += 1
+                                    fecha_actual = None
+                            except: pass
+                guardar_trm_locales(dicc_actual)
+                st.success(f"¡Sincronizados {contador:,} registros antiguos!")
+        except Exception as e: st.error(f"Error: {e}")
+
+# --- TAB 4: REINICIO MAESTRO / CONTROL DE CIERRE ---
+with tab4:
+    st.subheader("🧹 Formatear Aplicación (Cierre Fiscal)")
+    st.warning("⚠️ ¡Atención Contable! Esta acción borrará de forma permanente los históricos calculados.")
+    confirmacion = st.checkbox("Confirmo el formato absoluto.")
+    if confirmacion:
+        if st.button("🚨 EJECUTAR BORRADO DEFINITIVO"):
+            with open(FILE_GASTOS, "w", encoding="utf-8") as f: f.write("") 
+            with open(FILE_TRM, "w", encoding="utf-8") as f: f.write("") 
+            st.cache_data.clear()
+            st.success("¡Sistema purgado!")
+            st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
