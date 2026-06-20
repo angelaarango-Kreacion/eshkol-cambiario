@@ -253,4 +253,43 @@ def obtener_trm_inteligente(dicc, fecha_str):
     try:
         dt = datetime.strptime(fecha_str, "%Y-%m-%d")
         for i in range(1, 15):
-            f_ant = (dt -
+            f_ant = (dt - timedelta(days=i)).strftime("%Y-%m-%d")
+            if f_ant in dicc and dicc[f_ant] > 1000:
+                return dicc[f_ant]
+    except:
+        pass
+    return None
+
+with st.spinner("Sincronizando pasarela cambiaria en tiempo real..."):
+    trm_datos = sincronizar_trm_en_bloque()
+
+fecha_hoy_dt = datetime.now()
+fecha_hoy_str = fecha_hoy_dt.strftime("%Y-%m-%d")
+
+# ==========================================
+# 📅 CONTROLES CRONOLÓGICOS
+# ==========================================
+st.markdown("### 📅 Eje de Tiempo Sincronizado")
+c_ano, c_mes, c_dia = st.columns(3)
+ano_sel = c_ano.selectbox("Año de Consulta", list(range(fecha_hoy_dt.year, 2015, -1)))
+mes_sel = c_mes.selectbox("Mes de Consulta", list(range(1, 13)), index=fecha_hoy_dt.month - 1)
+dia_sel = c_dia.selectbox("Día de Consulta", list(range(1, 32)), index=fecha_hoy_dt.day - 1)
+
+try: 
+    fecha_base_dt = datetime(ano_sel, mes_sel, dia_sel)
+except: 
+    fecha_base_dt = datetime(ano_sel, mes_sel, 1)
+fecha_base_str = fecha_base_dt.strftime("%Y-%m-%d")
+
+trm_hoy = obtener_trm_inteligente(trm_datos, fecha_hoy_str)
+trm_inspeccionada = obtener_trm_inteligente(trm_datos, fecha_base_str)
+
+# --- PANEL DE TENDENCIA DE LA MONEDA ---
+st.write(" ")
+st.markdown("#### 📈 Tendencia de la Moneda Oficial (Ventana de 7 días)")
+cols_dias = st.columns(7)
+lista_fechas_semana = []
+lista_valores_semana = []
+dias_espanol = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+
+for i in
