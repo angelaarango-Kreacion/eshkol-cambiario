@@ -280,6 +280,7 @@ with col_r2:
 st.write(" ")
 tab0, tab1, tab2 = st.tabs(["📄 Procesar Extractos PDF", "💰 Registrar Gasto Manual", "📊 Consolidados"])
 
+# --- TAB 0: EXTRACTOR CON MÁQUINA DE ESTADOS (INALTERADO) ---
 with tab0:
     st.subheader("🕵️‍♂️ Extractor Avanzado Davivenda (Auditoría Anti-Duplicación por Máquina de Estados)")
     archivos_pdf = st.file_uploader("Cargar extractos bancarios (.pdf)", type=["pdf"], accept_multiple_files=True)
@@ -299,13 +300,12 @@ with tab0:
                         continue
                     
                     lineas_pag = texto_original.splitlines()
-                    in_summary_zone = False  # Reinicia estado por página para evitar falsos arrastres
+                    in_summary_zone = False  
                     fecha_actual_tracker = None
                     
                     for idx, linea in enumerate(lineas_pag):
                         linea_upper = linea.upper()
                         
-                        # A. DISPARADORES DE EXCLUSIÓN TOTAL (Zona de Resúmenes/Acumulados Contables)
                         indicadores_cierre = [
                             "TOTAL DR'S", "ANNUAL PERCENT", "OVERDRAFT AND RETURN", 
                             "YEAR-TO-DATE", "INTEREST-BEARING", "FEES DESCRIPTION"
@@ -313,25 +313,20 @@ with tab0:
                         if any(ind in linea_upper for ind in indicadores_cierre):
                             in_summary_zone = True
                         
-                        # Si la máquina de estados detectó que estamos en el resumen del final, se descarta todo
                         if in_summary_zone:
                             continue
                         
-                        # B. SEGUIMIENTO CRONOLÓGICO DE LA LÍNEA
                         match_fecha = patron_fecha.search(linea)
                         if match_fecha:
                             mes, dia, ano = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
                             if len(ano) == 2: ano = f"20{ano}"
                             fecha_actual_tracker = f"{ano}-{mes.zfill(2)}-{dia.zfill(2)}"
                         
-                        # C. EVALUACIÓN DE GASTOS REALES
                         es_ach = bool(patron_ach_flexible.search(linea_upper))
                         es_min = bool(patron_minimum_flexible.search(linea_upper))
                         
                         if es_ach or es_min:
-                            # Asignar fecha cronológica o fallback seguro
                             fecha_gasto = fecha_actual_tracker if fecha_actual_tracker else fecha_base_str
-                            
                             concepto_final = "ACH FEES" if es_ach else "BELOW MINIMUM BALANCE FEE"
                             monto_usd = 0.50 if es_ach else 35.00
                             
@@ -350,22 +345,23 @@ with tab0:
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
-            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** limpios de duplicados de resumen.")
+            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** limpios de duplicados.")
             st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
             
             if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
                     for g in gastos_encontrados_lote:
                         fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
-                st.success("¡Libro maestro actualizado sin redundancias!")
+                st.success("¡Libro maestro actualizado con éxito!")
         else:
             st.warning("No se identificaron comisiones deducibles reales en el archivo.")
 
+# --- TAB 1: REGISTRO MANUAL ---
 with tab1:
     st.subheader("Cruce Manual de Gastos Bancarios")
     c_izq, c_der = st.columns(2)
     with c_izq:
-        desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW BALANCE FEE"])
+        desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW MINIMUM BALANCE FEE"])
         usd_gasto = st.number_input("Monto (USD)", min_value=0.0, step=0.01, value=0.50 if desc_gasto=="ACH FEES" else 35.00)
     with c_der:
         if trm_inspeccionada and usd_gasto > 0:
@@ -375,12 +371,73 @@ with tab1:
             if st.button("💾 Guardar Gasto Manual"):
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
                     fg.write(f"{fecha_base_str};{desc_gasto};{usd_gasto};{trm_inspeccionada};{cop_equivalente}\n")
-                st.success("¡Registrado!")
+                st.success("¡Registrado con éxito!")
 
+# --- TAB 2: CONSOLIDADOS DIARIOS Y REINICIO MAESTRO (RESTITUIDO Y MEJORADO) ---
 with tab2:
-    st.subheader("📊 Histórico Contable")
-    if os.path.exists(FILE_GASTOS):
-        with open(FILE_GASTOS, "r", encoding="utf-8") as fg:
-            st.text(fg.read())
+    st.subheader("📊 Consolidación General y Libro Diario")
+    
+    if os.path.exists(FILE_GASTOS) and os.path.getsize(FILE_GASTOS) > 0:
+        try:
+            # Lectura del repositorio plano estructurado
+            df_master = pd.read_csv(
+                FILE_GASTOS, 
+                sep=";", 
+                names=["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP"], 
+                header=None
+            )
+            
+            # Bloque Superior de Métricas Consolidadas
+            c1, c2, c3 = st.columns(3)
+            c1.metric("📦 TRANSACCIONES CONTADAS", len(df_master))
+            c2.metric("💵 ACUMULADO TOTAL (USD)", f"$ {df_master['USD'].sum():,.2f}")
+            c3.metric("🇨🇴 EQUIVALENTE TOTAL (COP)", f"$ {df_master['Total COP'].sum():,.2f}")
+            
+            st.markdown("---")
+            
+            # Vista 1: Consolidado Agrupado por Día
+            st.markdown("### 🗓️ Consolidados Diarios")
+            df_diario = df_master.groupby("Fecha").agg({
+                "USD": "sum",
+                "Total COP": "sum",
+                "Descripción": "count"
+            }).reset_index().rename(columns={"Descripción": "Eventos"})
+            
+            st.dataframe(
+                df_diario.sort_values(by="Fecha", ascending=False), 
+                use_container_width=True, 
+                hide_index=True
+            )
+            
+            # Vista 2: Bitácora Transaccional Completa
+            st.markdown("### 🔍 Historial Detallado de Auditoría (Libro Auxiliar)")
+            st.dataframe(
+                df_master.sort_values(by="Fecha", ascending=False), 
+                use_container_width=True, 
+                hide_index=True
+            )
+            
+        except Exception as e:
+            st.error(f"Error procesando la estructura del libro contable: {e}")
+    else:
+        st.info("El Libro Maestro se encuentra vacío. Procesa extractos PDF o añade gastos manuales para ver los consolidados.")
+
+    # --- BOTÓN DE REINICIO COMPLETO ---
+    st.markdown("---")
+    st.subheader("⚠️ Zona de Mantenimiento Crítico")
+    
+    with st.expander("🚨 SECCIÓN PELIGROSA: Reiniciar Base de Datos Contable", expanded=False):
+        st.warning("Al ejecutar esta acción borrarás permanentemente todas las transacciones consolidadas en el libro maestro.")
+        check_seguridad = st.checkbox("Entiendo los riesgos y confirmo que deseo purgar el historial actual por completo.")
+        
+        if check_seguridad:
+            if st.button("🔥 Ejecutar Reinicio Completo del Sistema", type="primary"):
+                try:
+                    if os.path.exists(FILE_GASTOS):
+                        os.remove(FILE_GASTOS)
+                    st.success("¡El sistema y el libro maestro han sido inicializados a cero con éxito!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"No se pudo limpiar el archivo: {e}")
 
 st.markdown('</div>', unsafe_allow_html=True)
