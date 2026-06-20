@@ -365,7 +365,7 @@ with tab0:
         for archivo in archivos_pdf:
             try:
                 lector = pypdf.PdfReader(archivo)
-                fila_index = 0  # Marcador de posición secuencial interno para discriminar filas legítimas repetidas
+                fila_index = 0
                 
                 for num_pag, pagina in enumerate(lector.pages):
                     texto_pag = pagina.extract_text()
@@ -376,11 +376,33 @@ with tab0:
                     for linea in lineas:
                         linea_upper = linea.upper()
                         
+                        # 🚨 EXCLUSIÓN CONTABLE CRÍTICA: Descartar de raíz cuadros informativos y resúmenes anuales
+                        if any(x in linea_upper for x in ["TOTAL OVERDRAFT", "YEAR-TO-DATE", "BROUGHT FORWARD", "ANNUAL PERCENT"]):
+                            continue
+                            
                         is_ach = "ACH" in linea_upper and "FEE" in linea_upper
                         is_below = "BELOW" in linea_upper and "BALANCE" in linea_upper
                         
                         if is_ach or is_below:
                             concepto_final = "ACH FEES" if is_ach else "BELOW BALANCE FEE"
+                            
+                            # Extraer valores numéricos reales presentes en la línea para el débito
+                            valores_numericos = re.findall(r'[\d,.]+', linea)
+                            monto_usd = 0.0
+                            
+                            for val in valores_numericos:
+                                if '/' in val or '-' in val or len(val) < 2:
+                                    continue
+                                parsed_val = clean_amount_internal(val)
+                                # Validar rangos exactos de transacciones individuales reales
+                                if 0.10 <= parsed_val <= 45.00:
+                                    monto_usd = parsed_val
+                                    break
+                            
+                            # Si la línea tiene la palabra pero no el cargo real al lado (p.ej. es un encabezado intermedio) se descarta
+                            if monto_usd == 0.0:
+                                continue
+                                
                             fila_index += 1
                             
                             match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})', linea)
@@ -390,20 +412,8 @@ with tab0:
                                 if int_y < 100: int_y += 2000
                                 fecha_gasto = f"{int_y}-{str(m).zfill(2)}-{str(d).zfill(2)}"
                             else:
+                                # Si no tiene fecha en la línea, hereda la del estado de cuenta
                                 fecha_gasto = fecha_base_str
-                            
-                            valores_numericos = re.findall(r'[\d,.]+', linea)
-                            monto_usd = 0.0
-                            
-                            for val in valores_numericos:
-                                if '/' in val or '-' in val or len(val) < 2:
-                                    continue
-                                parsed_val = clean_amount_internal(val)
-                                if 0.0 < parsed_val < 500.0:
-                                    monto_usd = parsed_val
-                            
-                            if monto_usd == 0.0:
-                                monto_usd = 0.50 if concepto_final == "ACH FEES" else 35.00
                                 
                             trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
                             if trm_g:
@@ -414,14 +424,14 @@ with tab0:
                                     "TRM Aplicada": trm_g,
                                     "Total COP": monto_usd * trm_g,
                                     "Origen": archivo.name,
-                                    "Fila_PDF": fila_index  # Llave técnica de unicidad posicional
+                                    "Fila_PDF": fila_index
                                 })
             except Exception as e:
                 st.error(f"Error procesando el archivo {archivo.name}: {e}")
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
-            # El drop_duplicates ahora evalúa 'Fila_PDF' para preservar registros idénticos en la misma fecha
+            # El drop_duplicates blinda transacciones por posición pero remueve residuos idénticos de paginación externa
             df_enc = df_enc.drop_duplicates(subset=["Fecha", "Descripción", "USD", "Origen", "Fila_PDF"])
             
             st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** validados sin omisiones.")
