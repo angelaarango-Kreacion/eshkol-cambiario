@@ -202,7 +202,7 @@ FILE_TRM = "trm_almacen.txt"
 FILE_GASTOS = "gastos_almacen.txt"
 
 # =========================================================================
-# 📈 MOTOR DE SINCRONIZACIÓN TRM MASIVA (BBDD OFICIAL SUIFT)
+# 📈 MOTOR DE SINCRONIZACIÓN TRM MASIVA
 # =========================================================================
 def cargar_trm_locales():
     dicc = {}
@@ -349,7 +349,6 @@ with tab0:
             if not val_str: return 0.0
             cleaned = re.sub(r'[^\d.,-]', '', val_str.strip())
             if not cleaned: return 0.0
-            # Validar formatos decimales anglosajones/europeos comúnmente impresos en PDF
             if ',' in cleaned and '.' in cleaned:
                 if cleaned.rfind(',') > cleaned.rfind('.'):
                     cleaned = cleaned.replace('.', '').replace(',', '.')
@@ -366,8 +365,8 @@ with tab0:
         for archivo in archivos_pdf:
             try:
                 lector = pypdf.PdfReader(archivo)
+                fila_index = 0  # Marcador de posición secuencial interno para discriminar filas legítimas repetidas
                 
-                # Procesar hoja por hoja en modo texto crudo elástico sin dependencias de comillas fijas
                 for num_pag, pagina in enumerate(lector.pages):
                     texto_pag = pagina.extract_text()
                     if not texto_pag:
@@ -377,14 +376,13 @@ with tab0:
                     for linea in lineas:
                         linea_upper = linea.upper()
                         
-                        # Detectar los dos grandes pilares de costos de comisiones deducibles
                         is_ach = "ACH" in linea_upper and "FEE" in linea_upper
                         is_below = "BELOW" in linea_upper and "BALANCE" in linea_upper
                         
                         if is_ach or is_below:
                             concepto_final = "ACH FEES" if is_ach else "BELOW BALANCE FEE"
+                            fila_index += 1
                             
-                            # Extraer la fecha nativa de la línea (Formatos: MM/DD/AAAA, DD/MM/AA, etc.)
                             match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})', linea)
                             if match_fecha:
                                 m, d, y = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
@@ -394,19 +392,16 @@ with tab0:
                             else:
                                 fecha_gasto = fecha_base_str
                             
-                            # Buscar componentes numéricos remanentes al final o medio de la línea para el monto USD
                             valores_numericos = re.findall(r'[\d,.]+', linea)
                             monto_usd = 0.0
                             
-                            # Filtrar valores que correspondan a fechas para no usarlos como monto
                             for val in valores_numericos:
                                 if '/' in val or '-' in val or len(val) < 2:
                                     continue
                                 parsed_val = clean_amount_internal(val)
-                                if parsed_val > 0.0 and parsed_val < 500.0:  # Rango lógico para un fee
+                                if 0.0 < parsed_val < 500.0:
                                     monto_usd = parsed_val
                             
-                            # Margen de seguridad contable paramétrico si no viene impreso explícito en la cadena
                             if monto_usd == 0.0:
                                 monto_usd = 0.50 if concepto_final == "ACH FEES" else 35.00
                                 
@@ -418,15 +413,16 @@ with tab0:
                                     "USD": monto_usd,
                                     "TRM Aplicada": trm_g,
                                     "Total COP": monto_usd * trm_g,
-                                    "Origen": archivo.name
+                                    "Origen": archivo.name,
+                                    "Fila_PDF": fila_index  # Llave técnica de unicidad posicional
                                 })
             except Exception as e:
                 st.error(f"Error procesando el archivo {archivo.name}: {e}")
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
-            # Eliminar duplicaciones físicas idénticas para blindar el balance
-            df_enc = df_enc.drop_duplicates(subset=["Fecha", "Descripción", "USD", "Origen"])
+            # El drop_duplicates ahora evalúa 'Fila_PDF' para preservar registros idénticos en la misma fecha
+            df_enc = df_enc.drop_duplicates(subset=["Fecha", "Descripción", "USD", "Origen", "Fila_PDF"])
             
             st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** validados sin omisiones.")
             st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
