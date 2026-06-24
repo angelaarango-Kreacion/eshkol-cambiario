@@ -244,33 +244,15 @@ tab0, tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab0:
-    st.subheader("🕵️‍♂️ Extractor Avanzado Davivenda (Filtro Cronológico Puro)")
+    st.subheader("Extractor Estricto Davivenda (Valores Corporativos Fijos)")
     archivos_pdf = st.file_uploader("Cargar extractos bancarios (.pdf)", type=["pdf"], accept_multiple_files=True)
     
     if archivos_pdf:
         gastos_encontrados_lote = []
         
-        def clean_amount_internal(val_str: str) -> float:
-            if not val_str: return 0.0
-            cleaned = re.sub(r'[^\d.,-]', '', val_str.strip())
-            if not cleaned: return 0.0
-            if ',' in cleaned and '.' in cleaned:
-                if cleaned.rfind(',') > cleaned.rfind('.'):
-                    cleaned = cleaned.replace('.', '').replace(',', '.')
-                else:
-                    cleaned = cleaned.replace(',', '')
-            elif ',' in cleaned:
-                if len(cleaned.split(',')[1]) == 2:
-                    cleaned = cleaned.replace(',', '.')
-                else:
-                    cleaned = cleaned.replace(',', '')
-            try: return float(cleaned)
-            except: return 0.0
-
         for archivo in archivos_pdf:
             try:
                 lector = pypdf.PdfReader(archivo)
-                fila_index = 0
                 
                 for num_pag, pagina in enumerate(lector.pages):
                     texto_pag = pagina.extract_text()
@@ -278,38 +260,36 @@ with tab0:
                         continue
                     
                     lineas = texto_pag.splitlines()
+                    fila_index = 0
                     for linea in lineas:
                         fila_index += 1
-                        # Limpieza y colapso de múltiples espacios en blanco
                         linea_limpia = " ".join(linea.upper().split())
                         
                         is_ach = "ACH" in linea_limpia and "FEE" in linea_limpia
                         is_below = "BELOW" in linea_limpia and "BAL" in linea_limpia
                         
                         if is_ach or is_below:
-                            concepto_final = "ACH FEES" if is_ach else "BELOW BALANCE FEE"
-                            valores_numericos = re.findall(r'[\d,.]+', linea_limpia)
-                            monto_usd = 0.0
-                            
-                            for val in valores_numericos:
-                                if '/' in val or '-' in val or len(val) < 2:
-                                    continue
-                                parsed_val = clean_amount_internal(val)
-                                # Rango contable expandido de seguridad para comisiones bancarias
-                                if 0.10 <= parsed_val <= 150.00:
-                                    monto_usd = parsed_val
-                                    break
-                            
-                            if monto_usd == 0.0:
-                                continue
+                            # Asignación Directa por Regla de Negocio
+                            if is_ach:
+                                concepto_final = "ACH FEES"
+                                monto_usd = 0.50
+                            else:
+                                concepto_final = "BELOW BALANCE FEE"
+                                monto_usd = 35.00
                                 
-                            match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})', linea_limpia)
+                            # Identificación de la fecha de la transacción para la TRM
+                            patron_fecha = r'\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}'
+                            match_fecha = re.search(patron_fecha, linea_limpia)
                             
                             if match_fecha:
-                                m, d, y = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
-                                int_y = int(y)
-                                if int_y < 100: int_y += 2000
-                                fecha_gasto = f"{int_y}-{str(m).zfill(2)}-{str(d).zfill(2)}"
+                                componentes = re.findall(r'\d+', match_fecha.group(0))
+                                if len(componentes) == 3:
+                                    m, d, y = componentes[0], componentes[1], componentes[2]
+                                    int_y = int(y)
+                                    if int_y < 100: int_y += 2000
+                                    fecha_gasto = f"{int_y}-{str(m).zfill(2)}-{str(d).zfill(2)}"
+                                else:
+                                    fecha_gasto = fecha_base_str
                             else:
                                 fecha_gasto = fecha_base_str
                                 
@@ -329,18 +309,21 @@ with tab0:
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
+            # Mantiene cobros idénticos el mismo día si ocurren en distintas líneas del PDF
             df_enc = df_enc.drop_duplicates(subset=["Fecha", "Descripción", "USD", "Origen", "Fila_PDF"])
             
-            st.success(f"💥 Se consolidaron **{len(df_enc)} movimientos reales** validados sin omisiones ni duplicaciones informativas.")
+            st.success(f"✨ Se identificaron **{len(df_enc)} movimientos** en el lote actual.")
             st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
             
             if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
+                # Procedimiento de escritura lineal seguro para permitir repeticiones reales legítimas
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
                     for _, g in df_enc.iterrows():
                         fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
-                st.success("¡Todos los movimientos reales fueron integrados al histórico maestro!")
+                st.success("¡Movimientos integrados exitosamente al histórico maestro!")
+                st.cache_data.clear()
         else:
-            st.warning("No se identificaron comisiones deducibles en ninguno de los archivos cargados.")
+            st.warning("No se identificaron comisiones de ACH FEES o BELOW BALANCE FEE en los archivos cargados.")
 
 with tab1:
     st.subheader("Cruce Manual de Gastos Bancarios")
@@ -348,9 +331,11 @@ with tab1:
     with c_izq:
         st.info(f"Fecha de liquidación: **{fecha_base_dt.strftime('%d/%m/%Y')}**")
         desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW BALANCE FEE"])
-        usd_gasto = st.number_input("Monto (USD)", min_value=0.0, step=0.01, value=0.50 if desc_gasto=="ACH FEES" else 35.00)
+        # Montos fijos por defecto basados en la selección
+        usd_gasto = 0.50 if desc_gasto == "ACH FEES" else 35.00
+        st.metric("Monto Fijo Estructurado (USD)", f"$ {usd_gasto:.2f}")
     with c_der:
-        if trm_inspeccionada and usd_gasto > 0:
+        if trm_inspeccionada:
             cop_equivalente = usd_gasto * trm_inspeccionada
             st.success(f"TRM Aplicada: ${trm_inspeccionada:,.2f}")
             st.metric("Total Equivalente en COP", f"${cop_equivalente:,.2f}")
@@ -358,7 +343,7 @@ with tab1:
             if st.button("💾 Guardar Gasto Manual"):
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
                     fg.write(f"{fecha_base_str};{desc_gasto};{usd_gasto};{trm_inspeccionada};{cop_equivalente}\n")
-                st.success("¡Gasto registrado con éxito!")
+                st.success("¡Gasto manual registrado con éxito!")
 
 with tab2:
     st.subheader("📊 Reportes Financieros Consolidados e Histórico Cambiario")
@@ -437,8 +422,8 @@ with tab2:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
-        else: st.info("No hay transacciones registradas en el ciclo activo.")
-    else: st.info("No hay transacciones registradas en el ciclo activo.")
+        else: st.info("No hay transacciones registradas en el libro maestro.")
+    else: st.info("No hay transacciones registradas en el libro maestro.")
 
 with tab3:
     st.subheader("⚙️ Inyección de Respaldos")
