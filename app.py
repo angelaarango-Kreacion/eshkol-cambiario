@@ -253,6 +253,8 @@ with tab0:
         for archivo in archivos_pdf:
             try:
                 lector = pypdf.PdfReader(archivo)
+                # Evita la duplicación entre páginas (Resumen vs Detalle) usando firmas de archivo únicas
+                firmas_vistas_archivo = set()
                 
                 for num_pag, pagina in enumerate(lector.pages):
                     texto_pag = pagina.extract_text()
@@ -260,16 +262,16 @@ with tab0:
                         continue
                     
                     lineas = texto_pag.splitlines()
-                    fila_index = 0
+                    # Registra las ocurrencias específicas dentro de ESTA página para permitir repeticiones reales el mismo día
+                    conteos_pagina = {}
+                    
                     for linea in lineas:
-                        fila_index += 1
                         linea_limpia = " ".join(linea.upper().split())
                         
                         is_ach = "ACH" in linea_limpia and "FEE" in linea_limpia
                         is_below = "BELOW" in linea_limpia and "BAL" in linea_limpia
                         
                         if is_ach or is_below:
-                            # Asignación Directa por Regla de Negocio
                             if is_ach:
                                 concepto_final = "ACH FEES"
                                 monto_usd = 0.50
@@ -293,30 +295,38 @@ with tab0:
                             else:
                                 fecha_gasto = fecha_base_str
                                 
-                            trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
-                            if trm_g:
-                                gastos_encontrados_lote.append({
-                                    "Fecha": fecha_gasto,
-                                    "Descripción": concepto_final,
-                                    "USD": monto_usd,
-                                    "TRM Aplicada": trm_g,
-                                    "Total COP": monto_usd * trm_g,
-                                    "Origen": archivo.name,
-                                    "Fila_PDF": fila_index
-                                })
+                            # CONTROL INTEGRAL DE MULTIPLICIDAD:
+                            # Si un cobro ocurre 2 veces en la misma página, el primero tiene índice 1 y el segundo índice 2 (ambos se conservan).
+                            # Si la misma secuencia exacta se repite en otra página (un resumen), generará índices ya vistos y se descartará.
+                            clave_transaccion = (fecha_gasto, concepto_final, monto_usd)
+                            conteos_pagina[clave_transaccion] = conteos_pagina.get(clave_transaccion, 0) + 1
+                            idx_ocurrencia_pagina = conteos_pagina[clave_transaccion]
+                            
+                            firma_identificadora = (fecha_gasto, concepto_final, monto_usd, idx_ocurrencia_pagina)
+                            
+                            if firma_identificadora not in firmas_vistas_archivo:
+                                firmas_vistas_archivo.add(firma_identificadora)
+                                
+                                trm_g = obtener_trm_inteligente(trm_datos, fecha_gasto)
+                                if trm_g:
+                                    gastos_encontrados_lote.append({
+                                        "Fecha": fecha_gasto,
+                                        "Descripción": concepto_final,
+                                        "USD": monto_usd,
+                                        "TRM Aplicada": trm_g,
+                                        "Total COP": monto_usd * trm_g,
+                                        "Origen": archivo.name
+                                    })
             except Exception as e:
                 st.error(f"Error procesando el archivo {archivo.name}: {e}")
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
-            # Mantiene cobros idénticos el mismo día si ocurren en distintas líneas del PDF
-            df_enc = df_enc.drop_duplicates(subset=["Fecha", "Descripción", "USD", "Origen", "Fila_PDF"])
             
-            st.success(f"✨ Se identificaron **{len(df_enc)} movimientos** en el lote actual.")
+            st.success(f"✨ Se identificaron **{len(df_enc)} movimientos reales** en el lote actual.")
             st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
             
             if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
-                # Procedimiento de escritura lineal seguro para permitir repeticiones reales legítimas
                 with open(FILE_GASTOS, "a", encoding="utf-8") as fg:
                     for _, g in df_enc.iterrows():
                         fg.write(f"{g['Fecha']};{g['Descripción']};{g['USD']};{g['TRM Aplicada']};{g['Total COP']}\n")
@@ -331,7 +341,6 @@ with tab1:
     with c_izq:
         st.info(f"Fecha de liquidación: **{fecha_base_dt.strftime('%d/%m/%Y')}**")
         desc_gasto = st.selectbox("Concepto Contable", ["ACH FEES", "BELOW BALANCE FEE"])
-        # Montos fijos por defecto basados en la selección
         usd_gasto = 0.50 if desc_gasto == "ACH FEES" else 35.00
         st.metric("Monto Fijo Estructurado (USD)", f"$ {usd_gasto:.2f}")
     with c_der:
