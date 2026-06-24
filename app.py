@@ -426,7 +426,7 @@ with tab2:
             st.write("📋 **Libro Diario de Detalles**")
             st.dataframe(df_detalles_final, use_container_width=True, hide_index=True)
             
-            output_excel = ioBytesIO = io.BytesIO()
+            output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
                 df_detalles_final.to_excel(writer, sheet_name='📋 Detalle Diario', index=False)
                 df_semanal_final.to_excel(writer, sheet_name='📅 Resumen Semanal', index=False)
