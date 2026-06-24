@@ -271,7 +271,6 @@ with tab0:
             try:
                 lector = pypdf.PdfReader(archivo)
                 fila_index = 0
-                fuera_de_tiempo_diario = False
                 
                 for num_pag, pagina in enumerate(lector.pages):
                     texto_pag = pagina.extract_text()
@@ -280,35 +279,31 @@ with tab0:
                     
                     lineas = texto_pag.splitlines()
                     for linea in lineas:
-                        linea_upper = linea.upper()
+                        fila_index += 1
+                        # Limpieza y colapso de múltiples espacios en blanco
+                        linea_limpia = " ".join(linea.upper().split())
                         
-                        if any(x in linea_upper for x in ["OVERDRAFT AND RETURN", "YEAR-TO-DATE", "ANNUAL PERCENT", "BROUGHT FORWARD"]):
-                            fuera_de_tiempo_diario = True
-                            
-                        if fuera_de_tiempo_diario:
-                            continue
-                            
-                        is_ach = "ACH" in linea_upper and "FEE" in linea_upper
-                        is_below = "BELOW" in linea_upper and "BALANCE" in linea_upper
+                        is_ach = "ACH" in linea_limpia and "FEE" in linea_limpia
+                        is_below = "BELOW" in linea_limpia and "BAL" in linea_limpia
                         
                         if is_ach or is_below:
                             concepto_final = "ACH FEES" if is_ach else "BELOW BALANCE FEE"
-                            valores_numericos = re.findall(r'[\d,.]+', linea)
+                            valores_numericos = re.findall(r'[\d,.]+', linea_limpia)
                             monto_usd = 0.0
                             
                             for val in valores_numericos:
                                 if '/' in val or '-' in val or len(val) < 2:
                                     continue
                                 parsed_val = clean_amount_internal(val)
-                                if 0.10 <= parsed_val <= 45.00:
+                                # Rango contable expandido de seguridad para comisiones bancarias
+                                if 0.10 <= parsed_val <= 150.00:
                                     monto_usd = parsed_val
                                     break
                             
                             if monto_usd == 0.0:
                                 continue
                                 
-                            fila_index += 1
-                            match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})', linea)
+                            match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})', linea_limpia)
                             
                             if match_fecha:
                                 m, d, y = match_fecha.group(1), match_fecha.group(2), match_fecha.group(3)
