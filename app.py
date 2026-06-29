@@ -268,7 +268,8 @@ with tab0:
                     for linea in lineas:
                         linea_limpia = " ".join(linea.upper().split())
                         
-                        is_ach = "ACH" in linea_limpia and "FEE" in linea_limpia
+                        # 🚨 CAMBIO DE FILTRO: Asegura la omisión absoluta de reversiones 'REV ACH FEE'
+                        is_ach = "ACH" in linea_limpia and "FEE" in linea_limpia and "REV" not in linea_limpia
                         is_below = "BELOW" in linea_limpia and "BAL" in linea_limpia
                         
                         if is_ach or is_below:
