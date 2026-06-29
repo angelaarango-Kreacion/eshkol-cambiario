@@ -253,8 +253,8 @@ with tab0:
         for archivo in archivos_pdf:
             try:
                 lector = pypdf.PdfReader(archivo)
-                # Evita la duplicación entre páginas (Resumen vs Detalle) usando firmas de archivo únicas
                 firmas_vistas_archivo = set()
+                reversiones_a_compensar = []  # Almacena las fechas de cobros reversados hallados
                 
                 for num_pag, pagina in enumerate(lector.pages):
                     texto_pag = pagina.extract_text()
@@ -262,14 +262,25 @@ with tab0:
                         continue
                     
                     lineas = texto_pag.splitlines()
-                    # Registra las ocurrencias específicas dentro de ESTA página para permitir repeticiones reales el mismo día
                     conteos_pagina = {}
                     
                     for linea in lineas:
                         linea_limpia = " ".join(linea.upper().split())
                         
-                        # 🚨 CAMBIO DE FILTRO: Asegura la omisión absoluta de reversiones 'REV ACH FEE'
-                        is_ach = "ACH" in linea_limpia and "FEE" in linea_limpia and "REV" not in linea_limpia
+                        # 🚨 DETECCIÓN DE REVERSIÓN CORPORATIVA (REV ACH FEE)
+                        if "REV" in linea_limpia and "ACH" in linea_limpia and "FEE" in linea_limpia:
+                            patron_fecha = r'\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}'
+                            fechas_encontradas = re.findall(patron_fecha, linea_limpia)
+                            for f in fechas_encontradas:
+                                componentes = re.findall(r'\d+', f)
+                                if len(componentes) == 3:
+                                    m, d, y = componentes[0], componentes[1], componentes[2]
+                                    int_y = int(y)
+                                    if int_y < 100: int_y += 2000
+                                    reversiones_a_compensar.append(f"{int_y}-{str(m).zfill(2)}-{str(d).zfill(2)}")
+                            continue  # Saltamos la línea para no meterla como un gasto extra
+                        
+                        is_ach = "ACH" in linea_limpia and "FEE" in linea_limpia
                         is_below = "BELOW" in linea_limpia and "BAL" in linea_limpia
                         
                         if is_ach or is_below:
@@ -280,7 +291,6 @@ with tab0:
                                 concepto_final = "BELOW BALANCE FEE"
                                 monto_usd = 35.00
                                 
-                            # Identificación de la fecha de la transacción para la TRM
                             patron_fecha = r'\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}'
                             match_fecha = re.search(patron_fecha, linea_limpia)
                             
@@ -296,9 +306,6 @@ with tab0:
                             else:
                                 fecha_gasto = fecha_base_str
                                 
-                            # CONTROL INTEGRAL DE MULTIPLICIDAD:
-                            # Si un cobro ocurre 2 veces en la misma página, el primero tiene índice 1 y el segundo índice 2 (ambos se conservan).
-                            # Si la misma secuencia exacta se repite en otra página (un resumen), generará índices ya vistos y se descartará.
                             clave_transaccion = (fecha_gasto, concepto_final, monto_usd)
                             conteos_pagina[clave_transaccion] = conteos_pagina.get(clave_transaccion, 0) + 1
                             idx_ocurrencia_pagina = conteos_pagina[clave_transaccion]
@@ -318,13 +325,22 @@ with tab0:
                                         "Total COP": monto_usd * trm_g,
                                         "Origen": archivo.name
                                     })
+                                    
+                # 🚨 COMPENSACIÓN CONTABLE NETEO (Remueve el cobro anulado por el banco)
+                for fecha_rev in reversiones_a_compensar:
+                    for idx, gasto in enumerate(gastos_encontrados_lote):
+                        # Si coincide la fecha del valor afectado, el concepto y el archivo, se netea
+                        if gasto["Fecha"] == fecha_rev and gasto["Descripción"] == "ACH FEES" and gasto["Origen"] == archivo.name:
+                            gastos_encontrados_lote.pop(idx)
+                            break
+                            
             except Exception as e:
                 st.error(f"Error procesando el archivo {archivo.name}: {e}")
                 
         if gastos_encontrados_lote:
             df_enc = pd.DataFrame(gastos_encontrados_lote)
             
-            st.success(f"✨ Se identificaron **{len(df_enc)} movimientos reales** en el lote actual.")
+            st.success(f"✨ Se identificaron **{len(df_enc)} movimientos reales** en el lote actual (Aplicado neteo por reversiones).")
             st.dataframe(df_enc[["Fecha", "Descripción", "USD", "TRM Aplicada", "Total COP", "Origen"]], use_container_width=True, hide_index=True)
             
             if st.button("💾 Inyectar y Consolidar Todo en el Libro Maestro"):
